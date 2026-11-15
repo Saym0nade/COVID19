@@ -1,0 +1,153 @@
+---
+
+ИТОГОВЫЙ ПРОЕКТ (FINAL PROJECT)
+ТРЕБОВАНИЯ К ИТОГОВОМУ МИНИ-ПРОЕКТУ ПО ДИСЦИПЛИНЕ «PROGRAMMING FOR DATA ANALYSIS AND DATABASE»
+Образовательная программа: Applied Artificial Intelligence, магистратура
+I. Общие требования и структура
+Выбор темы. Магистрант выбирает одну из предложенных тем. Тема утверждается преподавателем. Проект выполняется индивидуально или в команде из 2–3 человек. При командной работе вклад каждого участника указывается в отчёте и в презентации.
+Язык программирования. Проект полностью реализуется на языке Python (версия 3.x).
+Среда запуска. Проект должен корректно запускаться и работать в стандартной консоли или в одной из следующих сред: Google Colab, Visual Studio Code или PyCharm Community Edition.
+
+Сдача проекта. Магистрант сдаёт:
+•       исходный код проекта (все файлы .py и/или .ipynb);
+•       файлы данных (.csv, .json, .txt, .parquet, .db) или ссылку на источник данных, если объём файлов слишком велик для загрузки;
+•       файл README.md с описанием проекта и инструкцией по запуску;
+•       письменный отчёт по проекту (описание данных, методов, результатов анализа и выводов);
+•       презентацию по проекту (.pptx или .pdf).
+Код проекта размещается в репозитории GitHub. Отчёт и презентация загружаются в LMS Moodle не позднее чем за 2–3 дня до даты итогового экзамена.
+Защита проекта. Проект демонстрируется преподавателю. В ходе защиты магистрант кратко объясняет логику работы программы, архитектуру кода и полученные результаты.
+Примечание. Для каждого кластера тем указаны обязательные минимальные задачи. Они подтверждают базовые компетенции в программировании на Python, анализе данных и работе с базами данных.
+По согласованию с преподавателем магистрант может расширить проект: добавить функциональность, методы машинного обучения, элементы искусственного интеллекта, дополнительные визуализации или интеграцию с внешними библиотеками и сервисами. Такие расширения приветствуются и могут повысить итоговую оценку.
+
+II. Технические требования (обязательный функционал)
+Проект должен демонстрировать уверенное владение следующими ключевыми концепциями:
+№
+Требование
+Описание
+1
+Функциональное программирование
+Использование не менее 5 различных функций (помимо main), логически разделяющих функционал программы.
+2
+Структуры данных
+Активное использование списков и/или словарей (list, dict) для хранения и обработки данных проекта.
+3
+Условная логика
+Корректное применение управляющих конструкций if, elif, else.
+4
+Циклы и итерации
+Использование циклов for и/или while для обработки данных, организации меню или повторного ввода.
+5
+Работа с файлами
+Чтение и запись данных в постоянное хранилище (.txt, .csv, .json, .parquet), например сохранение состояния программы или результатов анализа.
+6
+Обработка ошибок
+Использование конструкции try...except для перехвата как минимум одного типа ошибок (например, некорректного ввода пользователя или отсутствия файла).
+7
+Пользовательский интерфейс
+Интерактивное консольное меню с выбором основных операций (например, «1 – Загрузить данные», «2 – Поиск», «3 – Выход») или мини-дашборд на Streamlit/Dash с фильтрами.
+8
+Модульность
+Разделение кода на несколько файлов .py с импортом функций и/или классов; использование стандартных библиотек Python (например, os, pathlib, datetime, json).
+9
+Обоснование выбранного подхода
+Сравнительная оценка не менее двух подходов и базового варианта (baseline). Сравниваться могут методы обработки данных (CSV и Parquet, Pandas и SQL), способы представления текста (BoW, TF-IDF, embeddings) или модели. Критерии сравнения: метрики качества, время выполнения, потребление памяти.
+10
+Базы данных и SQL
+Загрузка данных в SQLite или PostgreSQL, построение ER-диаграммы, выполнение не менее 8 SQL-запросов (JOIN, GROUP BY/HAVING, подзапросы или CTE, оконные функции), загрузка результатов запросов в Pandas.
+11
+Объём данных
+Рекомендуемый объём набора данных: не менее 500 тыс. строк или 200 МБ. Обработка выполняется с учётом ограничений памяти: chunksize, оптимизация типов данных, формат Parquet. Исключения согласуются с преподавателем (например, темы 1, 11, 12, 19–23, 26, 32, 39, 41, 59, 60).
+
+III. Assessment Criteria for the Final Project (0–100 points)
+The final project is graded on a 0–100 scale (Final Exam = Project Work, 40% of the course grade). Points for each criterion follow the achievement levels of the syllabus rubric: Excellent — 90–100% of the maximum, Good — 70–89%, Satisfactory — 50–69%, Fail — 0–49%.
+№
+Criterion
+Max
+Excellent (90–100%)
+Good (70–89%)
+Satisfactory (50–69%)
+Fail (0–49%)
+1
+Software implementation (requirements 1–8)
+20
+All requirements 1–8 met; modular code with logically separated functions and correct error handling
+All requirements met with minor issues in structure or error handling
+Not all requirements met; weak code structure, much duplication
+Most requirements not met; program does not run
+2
+Data and preprocessing
+15
+Correct handling of large data (chunksize, Parquet, dtype optimization with measurements); full data quality audit; justified cleaning
+Data loaded and cleaned correctly; optimization or audit partial
+Superficial preprocessing; handling of data volume not shown
+Data not prepared or processed with serious errors
+3
+Databases and SQL (requirement 10)
+10
+ER diagram, normalized schema, 8+ correct queries with JOINs, CTEs, and window functions; results used in the analysis
+Correct schema and queries, minimal use of window functions or CTEs
+Fewer than 8 queries; simple SELECTs without JOINs or aggregation
+SQL not used or queries do not work
+4
+Data analysis and visualization
+15
+Complete EDA; informative, properly labeled visualizations; conclusions supported by data
+EDA done, visualizations correct, interpretation incomplete
+Plots without labels or interpretation; formal analysis
+Analysis and visualizations missing or incorrect
+5
+Methods, comparison, and justification (requirement 9, cluster tasks)
+15
+All mandatory cluster tasks done; 2+ approaches compared with a baseline on a leakage-free split; choice justified by metrics, time, and memory
+Comparison done but without a baseline, or some cluster tasks missing
+Single method without comparison; metrics without interpretation
+No methods applied, or results obtained with data leakage
+6
+Code quality and reproducibility
+10
+Runs from README without changes; requirements.txt, GitHub repository with commit history, clear naming and comments
+Runs after minor fixes; incomplete documentation
+Requires the author's help to run; no README or requirements.txt
+Project cannot be run
+7
+Written report
+5
+Data, methods, results, limitations, and conclusions described; metric tables and references included
+Complete report, some sections superficial
+Incomplete report without result tables
+No report submitted
+8
+Presentation and defense
+10
+Logical presentation within time limit; confident answers on code and methods
+Good presentation; some inaccuracies in answers
+Weak presentation; difficulty answering questions
+Cannot explain the project logic or code
+
+Total / Итого
+100
+
+---
+
+Выбраный кластер - Cluster 1: Exploratory Analytics, Time Series & Dashboards
+Обязательные задачи:
+•       EDA: описательная статистика, пропуски, выбросы (IQR/boxplot), типы признаков
+•       Временные ряды: resample, скользящие средние, сезонная декомпозиция
+•       Корреляционный анализ (corr, heatmap)
+•       4–5 визуализаций, из них не менее 1 интерактивной (Plotly)
+•       Хранение очищенных данных в SQLite, выборки через SQL
+•       Мини-дашборд Streamlit/Dash с фильтрами (год, регион, категория)
+•       Сравнение простого прогноза с baseline: naive или seasonal naive против скользящего среднего или Linear Regression (MAE)
+
+Выбранная тема:
+3
+COVID-19 Global Dynamics
+Analyze waves, vaccination, and mortality across countries
+Our World in Data
+https://github.com/owid/covid-19-data
+Pandas, Plotly, Dash
+Wave detection + interactive dashboard
+ Alen Smailov, Yermukhamet Akbet, Sayan Aukatov
+
+
+AAI-2606M

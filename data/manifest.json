@@ -1,0 +1,409 @@
+{
+  "generated_at": "2026-11-15T14:52:01.121354+00:00",
+  "source": "Our World in Data COVID-19 dataset",
+  "sources": {
+    "catalog": {
+      "role": "primary",
+      "documentation": "https://docs.owid.io/projects/etl/api/covid/#download-data",
+      "note": "Current ETL catalog exports; use as the primary source."
+    },
+    "legacy_github": {
+      "role": "fallback",
+      "repository": "https://github.com/owid/covid-19-data",
+      "note": "Legacy GitHub exports; retained because they may contain fields or observations missing from the catalog."
+    }
+  },
+  "source_priority": {
+    "primary": "catalog",
+    "fallback": "legacy_github",
+    "merge_rule": "Outer merge on iso_code + date; catalog values win when present, legacy values fill gaps and old-only columns are retained."
+  },
+  "legacy_files": [
+    {
+      "name": "covid-hospitalizations.csv",
+      "path": "data/raw/covid-hospitalizations.csv",
+      "bytes": 14185001,
+      "megabytes": 13.53,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/hospitalizations/covid-hospitalizations.csv",
+      "rows": 230524
+    },
+    {
+      "name": "covid-testing-all-observations.csv",
+      "path": "data/raw/covid-testing-all-observations.csv",
+      "bytes": 17687206,
+      "megabytes": 16.87,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/testing/covid-testing-all-observations.csv",
+      "rows": 106788
+    },
+    {
+      "name": "excess_mortality.csv",
+      "path": "data/raw/excess_mortality.csv",
+      "bytes": 2739462,
+      "megabytes": 2.61,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/excess_mortality/excess_mortality.csv",
+      "rows": 18855
+    },
+    {
+      "name": "owid-covid-data.csv",
+      "path": "data/raw/owid-covid-data.csv",
+      "bytes": 98391483,
+      "megabytes": 93.83,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv",
+      "rows": 429435
+    },
+    {
+      "name": "vaccinations-by-age-group.csv",
+      "path": "data/raw/vaccinations-by-age-group.csv",
+      "bytes": 3027314,
+      "megabytes": 2.89,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/vaccinations/vaccinations-by-age-group.csv",
+      "rows": 73291
+    },
+    {
+      "name": "vaccinations-by-manufacturer.csv",
+      "path": "data/raw/vaccinations-by-manufacturer.csv",
+      "bytes": 2838967,
+      "megabytes": 2.71,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/vaccinations/vaccinations-by-manufacturer.csv",
+      "rows": 68509
+    },
+    {
+      "name": "vaccinations.csv",
+      "path": "data/raw/vaccinations.csv",
+      "bytes": 14383688,
+      "megabytes": 13.72,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/vaccinations/vaccinations.csv",
+      "rows": 196246
+    },
+    {
+      "name": "who-covid-cases-deaths.csv",
+      "path": "data/raw/who-covid-cases-deaths.csv",
+      "bytes": 75260298,
+      "megabytes": 71.77,
+      "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/cases_deaths/COVID-19%20Cases%20and%20deaths%20-%20WHO.csv",
+      "rows": 413146
+    }
+  ],
+  "catalog_files": [
+    {
+      "name": "cases_deaths.csv",
+      "path": "data/raw/catalog/cases_deaths.csv",
+      "bytes": 188968256,
+      "megabytes": 180.21,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/cases_deaths/cases_deaths.csv",
+      "rows": 617520
+    },
+    {
+      "name": "compact.csv",
+      "path": "data/raw/catalog/compact.csv",
+      "bytes": 185325500,
+      "megabytes": 176.74,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/compact/compact.csv",
+      "rows": 629868
+    },
+    {
+      "name": "covax.csv",
+      "path": "data/raw/catalog/covax.csv",
+      "bytes": 5566,
+      "megabytes": 0.01,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/covax/covax.csv",
+      "rows": 29
+    },
+    {
+      "name": "excess_mortality.csv",
+      "path": "data/raw/catalog/excess_mortality.csv",
+      "bytes": 4566502,
+      "megabytes": 4.35,
+      "source_url": "https://catalog.ourworldindata.org/garden/excess_mortality/latest/excess_mortality/excess_mortality.csv",
+      "rows": 15143
+    },
+    {
+      "name": "excess_mortality_economist.csv",
+      "path": "data/raw/catalog/excess_mortality_economist.csv",
+      "bytes": 13411207,
+      "megabytes": 12.79,
+      "source_url": "https://catalog.ourworldindata.org/garden/excess_mortality/latest/excess_mortality_economist/excess_mortality_economist.csv",
+      "rows": 55458
+    },
+    {
+      "name": "google_mobility.csv",
+      "path": "data/raw/catalog/google_mobility.csv",
+      "bytes": 32701195,
+      "megabytes": 31.19,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/google_mobility/google_mobility.csv",
+      "rows": 784944
+    },
+    {
+      "name": "hospital.csv",
+      "path": "data/raw/catalog/hospital.csv",
+      "bytes": 2526151,
+      "megabytes": 2.41,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/hospital/hospital.csv",
+      "rows": 46777
+    },
+    {
+      "name": "oxcgrt_policy.csv",
+      "path": "data/raw/catalog/oxcgrt_policy.csv",
+      "bytes": 21820314,
+      "megabytes": 20.81,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/oxcgrt_policy/oxcgrt_policy.csv",
+      "rows": 202760
+    },
+    {
+      "name": "testing.csv",
+      "path": "data/raw/catalog/testing.csv",
+      "bytes": 5545327,
+      "megabytes": 5.29,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/testing/testing.csv",
+      "rows": 106788
+    },
+    {
+      "name": "tracking_r.csv",
+      "path": "data/raw/catalog/tracking_r.csv",
+      "bytes": 10459101,
+      "megabytes": 9.97,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/tracking_r/tracking_r.csv",
+      "rows": 185683
+    },
+    {
+      "name": "vaccinations_age.csv",
+      "path": "data/raw/catalog/vaccinations_age.csv",
+      "bytes": 3055532,
+      "megabytes": 2.91,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_age/vaccinations_age.csv",
+      "rows": 74142
+    },
+    {
+      "name": "vaccinations_global.csv",
+      "path": "data/raw/catalog/vaccinations_global.csv",
+      "bytes": 65735456,
+      "megabytes": 62.69,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_global/vaccinations_global.csv",
+      "rows": 203057
+    },
+    {
+      "name": "vaccinations_manufacturer.csv",
+      "path": "data/raw/catalog/vaccinations_manufacturer.csv",
+      "bytes": 30868773,
+      "megabytes": 29.44,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_manufacturer/vaccinations_manufacturer.csv",
+      "rows": 888360
+    },
+    {
+      "name": "vaccinations_us.csv",
+      "path": "data/raw/catalog/vaccinations_us.csv",
+      "bytes": 4568464,
+      "megabytes": 4.36,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_us/vaccinations_us.csv",
+      "rows": 54628
+    },
+    {
+      "name": "yougov_composite.csv",
+      "path": "data/raw/catalog/yougov_composite.csv",
+      "bytes": 7407,
+      "megabytes": 0.01,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/yougov/yougov_composite.csv",
+      "rows": 172
+    }
+  ],
+  "catalog_metadata_files": [
+    {
+      "name": "cases_deaths.meta.json",
+      "path": "data/raw/catalog/cases_deaths.meta.json",
+      "bytes": 195084,
+      "megabytes": 0.19,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/cases_deaths/cases_deaths.meta.json"
+    },
+    {
+      "name": "compact.meta.json",
+      "path": "data/raw/catalog/compact.meta.json",
+      "bytes": 1108311,
+      "megabytes": 1.06,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/compact/compact.meta.json"
+    },
+    {
+      "name": "covax.meta.json",
+      "path": "data/raw/catalog/covax.meta.json",
+      "bytes": 37596,
+      "megabytes": 0.04,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/covax/covax.meta.json"
+    },
+    {
+      "name": "excess_mortality.meta.json",
+      "path": "data/raw/catalog/excess_mortality.meta.json",
+      "bytes": 238006,
+      "megabytes": 0.23,
+      "source_url": "https://catalog.ourworldindata.org/garden/excess_mortality/latest/excess_mortality/excess_mortality.meta.json"
+    },
+    {
+      "name": "excess_mortality_economist.meta.json",
+      "path": "data/raw/catalog/excess_mortality_economist.meta.json",
+      "bytes": 144673,
+      "megabytes": 0.14,
+      "source_url": "https://catalog.ourworldindata.org/garden/excess_mortality/latest/excess_mortality_economist/excess_mortality_economist.meta.json"
+    },
+    {
+      "name": "google_mobility.meta.json",
+      "path": "data/raw/catalog/google_mobility.meta.json",
+      "bytes": 8645,
+      "megabytes": 0.01,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/google_mobility/google_mobility.meta.json"
+    },
+    {
+      "name": "hospital.meta.json",
+      "path": "data/raw/catalog/hospital.meta.json",
+      "bytes": 104726,
+      "megabytes": 0.1,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/hospital/hospital.meta.json"
+    },
+    {
+      "name": "oxcgrt_policy.meta.json",
+      "path": "data/raw/catalog/oxcgrt_policy.meta.json",
+      "bytes": 170055,
+      "megabytes": 0.16,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/oxcgrt_policy/oxcgrt_policy.meta.json"
+    },
+    {
+      "name": "testing.meta.json",
+      "path": "data/raw/catalog/testing.meta.json",
+      "bytes": 222706,
+      "megabytes": 0.21,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/testing/testing.meta.json"
+    },
+    {
+      "name": "tracking_r.meta.json",
+      "path": "data/raw/catalog/tracking_r.meta.json",
+      "bytes": 19344,
+      "megabytes": 0.02,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/tracking_r/tracking_r.meta.json"
+    },
+    {
+      "name": "vaccinations_age.meta.json",
+      "path": "data/raw/catalog/vaccinations_age.meta.json",
+      "bytes": 44958,
+      "megabytes": 0.04,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_age/vaccinations_age.meta.json"
+    },
+    {
+      "name": "vaccinations_global.meta.json",
+      "path": "data/raw/catalog/vaccinations_global.meta.json",
+      "bytes": 759231,
+      "megabytes": 0.72,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_global/vaccinations_global.meta.json"
+    },
+    {
+      "name": "vaccinations_manufacturer.meta.json",
+      "path": "data/raw/catalog/vaccinations_manufacturer.meta.json",
+      "bytes": 30858,
+      "megabytes": 0.03,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_manufacturer/vaccinations_manufacturer.meta.json"
+    },
+    {
+      "name": "vaccinations_us.meta.json",
+      "path": "data/raw/catalog/vaccinations_us.meta.json",
+      "bytes": 19337,
+      "megabytes": 0.02,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/vaccinations_us/vaccinations_us.meta.json"
+    },
+    {
+      "name": "yougov_composite.meta.json",
+      "path": "data/raw/catalog/yougov_composite.meta.json",
+      "bytes": 25596,
+      "megabytes": 0.02,
+      "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/yougov/yougov_composite.meta.json"
+    }
+  ],
+  "totals": {
+    "legacy_files": 8,
+    "legacy_bytes": 228513419,
+    "legacy_megabytes": 217.93,
+    "legacy_rows": 1536794,
+    "catalog_files": 15,
+    "catalog_bytes": 569564751,
+    "catalog_megabytes": 543.18,
+    "catalog_rows": 3865329,
+    "catalog_metadata_files": 15,
+    "catalog_metadata_bytes": 3129126,
+    "catalog_metadata_megabytes": 2.98,
+    "data_files": 23,
+    "data_bytes": 798078170,
+    "data_megabytes": 761.11,
+    "data_rows": 5402123,
+    "all_files": 38,
+    "all_bytes": 801207296,
+    "all_megabytes": 764.09
+  },
+  "primary_dataset": {
+    "name": "compact.csv",
+    "path": "data/raw/catalog/compact.csv",
+    "bytes": 185325500,
+    "megabytes": 176.74,
+    "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/compact/compact.csv",
+    "rows": 629868
+  },
+  "legacy_dataset": {
+    "name": "owid-covid-data.csv",
+    "path": "data/raw/owid-covid-data.csv",
+    "bytes": 98391483,
+    "megabytes": 93.83,
+    "source_url": "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv",
+    "rows": 429435
+  },
+  "main_dataset": {
+    "name": "compact.csv",
+    "path": "data/raw/catalog/compact.csv",
+    "bytes": 185325500,
+    "megabytes": 176.74,
+    "source_url": "https://catalog.ourworldindata.org/garden/covid/latest/compact/compact.csv",
+    "rows": 629868
+  },
+  "samples": {
+    "legacy": {
+      "path": "data/sample/owid-covid-sample.csv",
+      "rows": 53680,
+      "columns": 67,
+      "locations": 255,
+      "date_min": "2020-01-03",
+      "date_max": "2024-08-13",
+      "step": 8,
+      "renamed_columns": {}
+    },
+    "catalog": {
+      "path": "data/sample/owid-catalog-sample.csv",
+      "rows": 78734,
+      "columns": 61,
+      "locations": 261,
+      "date_min": "2020-01-01",
+      "date_max": "2026-10-18",
+      "step": 8,
+      "renamed_columns": {
+        "code": "iso_code",
+        "country": "location"
+      }
+    }
+  },
+  "sample": {
+    "path": "data/sample/owid-catalog-sample.csv",
+    "rows": 78734,
+    "columns": 61,
+    "locations": 261,
+    "date_min": "2020-01-01",
+    "date_max": "2026-10-18",
+    "step": 8,
+    "renamed_columns": {
+      "code": "iso_code",
+      "country": "location"
+    }
+  },
+  "volume_requirement": {
+    "target_rows": 500000,
+    "target_megabytes": 200,
+    "legacy_rows_ok": true,
+    "legacy_megabytes_ok": true,
+    "catalog_rows_ok": true,
+    "catalog_megabytes_ok": true,
+    "combined_rows_ok": true,
+    "combined_megabytes_ok": true,
+    "satisfied": true
+  }
+}
