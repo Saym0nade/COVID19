@@ -409,8 +409,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     try:
         run(parse_args())
-    except (FileNotFoundError, ValueError, KeyError) as exc:
-        print(f"forecast failed: {exc}", file=sys.stderr)
+    except (FileNotFoundError, ValueError, KeyError, ImportError, RuntimeError) as exc:
+        print(f"forecast failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
 

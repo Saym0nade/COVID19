@@ -58,7 +58,7 @@ def clean_data(frame: pd.DataFrame) -> pd.DataFrame:
             result[column] = pd.to_numeric(result[column], errors="coerce")
     keys = [column for column in (COUNTRY_CODE_COLUMN, DATE_COLUMN) if column in result]
     if keys:
-        result = result.drop_duplicates(subset=keys)
+        result = result.drop_duplicates(subset=keys, keep="last")
     return result
 
 

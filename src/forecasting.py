@@ -39,10 +39,12 @@ def _future_index(series: pd.Series, horizon: int) -> pd.Index:
         raise ValueError("cannot forecast an empty series")
     if isinstance(series.index, pd.DatetimeIndex):
         try:
-            frequency = pd.infer_freq(series.index)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                frequency = pd.infer_freq(series.index)
         except ValueError:
             frequency = None
-        frequency = frequency or "D"
+        frequency = getattr(frequency, "freqstr", frequency) or "D"
         offset = pd.tseries.frequencies.to_offset(frequency)
         start = series.index[-1] + offset
         return pd.date_range(start=start, periods=horizon, freq=frequency)

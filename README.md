@@ -85,6 +85,19 @@ python scripts/run_forecast.py         # прогноз: global + top-5 стра
 python -m src.app                      # интерактивный дашборд
 ```
 
+Полный end-to-end запуск одной командой:
+
+```bash
+python scripts/run_all.py
+```
+
+Тесты:
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q tests
+```
+
 `download_data.py` использует актуальный ETL-каталог OWID как основной источник и legacy GitHub-датасеты как fallback. `build_merged_dataset.py` создаёт `data/processed/covid_merged.parquet` — объединённый набор из каталога и legacy с приоритетом каталога.
 
 Дашборд открывается по адресу, который выведет Dash, обычно `http://127.0.0.1:8050`. Если объединённый parquet ещё не собран, приложение автоматически использует `data/sample/owid-catalog-sample.csv`, затем legacy sample.
@@ -124,6 +137,7 @@ python3 scripts/prepare_data.py
 ├── README.md
 ├── PROJECT_PLAN.md
 ├── requirements.txt
+├── requirements-dev.txt
 ├── data/
 │   ├── raw/                 # legacy GitHub, не коммитится
 │   │   └── catalog/         # актуальный ETL catalog, не коммитится
@@ -152,10 +166,20 @@ python3 scripts/prepare_data.py
 │   ├── build_sqlite.py
 │   ├── run_sql.py
 │   ├── run_analysis.py
-│   └── run_forecast.py
+│   ├── run_forecast.py
+│   ├── benchmark_storage.py
+│   ├── smoke_test.py
+│   └── run_all.py
+├── tests/
+│   ├── test_data_pipeline.py
+│   ├── test_forecasting.py
+│   ├── test_analytics_timeseries.py
+│   └── test_app_map.py
 ├── docs/
 │   ├── data_contract.md
 │   ├── phase0_report.md
+│   ├── integration_report.md
+│   ├── review_checklist.md
 │   ├── analysis_notes.md
 │   ├── forecast_notes.md
 │   ├── map_notes.md
@@ -180,6 +204,8 @@ python3 scripts/prepare_data.py
 
 - Данные, поля, таблицы и выходные файлы: [docs/data_contract.md](docs/data_contract.md).
 - Результаты фазы 0: [docs/phase0_report.md](docs/phase0_report.md).
+- Интеграция дней 6: [docs/integration_report.md](docs/integration_report.md).
+- Review checklist дня 7: [docs/review_checklist.md](docs/review_checklist.md).
 - Полный план: [PROJECT_PLAN.md](PROJECT_PLAN.md).
 
 ## Текущий статус
@@ -201,10 +227,30 @@ Phase 0:
 
 Sync-1: завершён (ветки участников сведены с main).
 
-Phase 1 (в процессе):
+Phase 1: завершена.
 
-- [x] пайплайн данных: merged parquet, SQLite, SQL-запросы, EDA и временные ряды;
-- [x] прогноз `global` и top-5 стран по `total_cases` с time-based split и горизонтом 30 дней;
-- [x] дашборд с фильтрами и вкладками Overview / Waves / Vaccination vs Mortality / Forecast / Data/SQL;
-- [x] README, requirements и документация по прогнозу обновлены;
-- [ ] финальная интеграция, отчёт и презентация.
+Day 6 (integration):
+
+- [x] end-to-end runner `scripts/run_all.py`;
+- [x] полный pipeline прогнан: данные → EDA → SQLite → SQL → forecast → benchmark → smoke test;
+- [x] исправлены интерфейсы карты, SQLite waves и forecast recent/future;
+- [x] dashboard HTTP 200;
+- [x] отчёт об интеграции: `docs/integration_report.md`.
+
+Day 7 (tests/review):
+
+- [x] автоматические тесты в `tests/`;
+- [x] `requirements-dev.txt` с pytest;
+- [x] обработка ошибок в runners;
+- [x] review checklist: `docs/review_checklist.md`;
+- [x] черновик отчёта обновлён.
+
+Текущее состояние forecast:
+
+- обучение до 2023-12-31;
+- полный backtest 2024-01-01 — 2026-10-18;
+- recent holdout 90 дней;
+- future-прогноз до 2027-01-01;
+- 6 моделей, включая Holt-Winters и LSTM.
+
+Следующие дни: финальный отчёт, презентация, freeze и защита.

@@ -528,4 +528,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except (FileNotFoundError, KeyError, ValueError, OSError) as exc:
+        print(f"analysis failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
