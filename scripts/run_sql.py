@@ -83,6 +83,9 @@ def main() -> None:
     for number, message in failures:
         print(f"  query_{number:02d}: {message}")
 
+    if failures:
+        raise SystemExit(1)
+
 
 if __name__ == "__main__":
     main()
