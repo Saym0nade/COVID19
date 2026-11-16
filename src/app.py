@@ -316,6 +316,40 @@ def _kpi_cards(frame: pd.DataFrame) -> list:
     ]
 
 
+def _select_display_model(
+    series_name: str,
+    candidates: pd.DataFrame,
+    metrics: pd.DataFrame | None,
+    reference_mean: float,
+    require_variance: bool = False,
+) -> str | None:
+    if metrics is not None and {"series", "model", "mae"}.issubset(metrics.columns):
+        ordered = (
+            metrics[metrics["series"] == series_name]
+            .sort_values("mae")["model"]
+            .dropna()
+            .astype(str)
+            .tolist()
+        )
+    else:
+        ordered = candidates["model"].dropna().astype(str).unique().tolist()
+    threshold = max(0.0, 0.01 * float(reference_mean))
+    visible: list[tuple[str, pd.Series]] = []
+    for model in ordered:
+        subset = candidates[candidates["model"].astype(str) == model]
+        values = pd.to_numeric(subset["predicted"], errors="coerce").dropna()
+        if values.empty:
+            continue
+        if abs(float(values.sum())) > 0 and float(values.mean()) > threshold:
+            visible.append((model, values))
+    if require_variance:
+        for model, values in visible:
+            mean = abs(float(values.mean()))
+            if float(values.std(ddof=0)) > max(1e-9, 0.01 * mean):
+                return model
+    return visible[0][0] if visible else None
+
+
 def _forecast_section(
     metrics: pd.DataFrame | None,
     predictions: pd.DataFrame | None,
@@ -361,16 +395,6 @@ def _forecast_section(
 
     if predictions is not None:
         try:
-            best_models: dict[str, str] = {}
-            if metrics is not None and {"series", "model", "mae"}.issubset(
-                metrics.columns
-            ):
-                valid = metrics.dropna(subset=["mae"])
-                for series, group in valid.groupby("series"):
-                    best_models[str(series)] = str(
-                        group.sort_values("mae").iloc[0]["model"]
-                    )
-
             if "split" in predictions.columns:
                 test_predictions = predictions[predictions["split"] == "test"].copy()
                 future_predictions = predictions[predictions["split"] == "future"].copy()
@@ -379,18 +403,25 @@ def _forecast_section(
                 future_predictions = predictions.iloc[0:0].copy()
 
             parts: list[pd.DataFrame] = []
+            skipped_series: list[str] = []
             for series, group in test_predictions.groupby("series"):
-                model = best_models.get(str(series))
-                if not model or model not in set(group["model"]):
-                    model = str(group["model"].dropna().iloc[0])
                 actual = (
                     group[["date", "actual"]]
                     .drop_duplicates(subset=["date"])
                     .rename(columns={"actual": "value"})
                 )
+                actual_values = pd.to_numeric(actual["value"], errors="coerce").dropna()
+                reference_mean = float(actual_values.mean()) if not actual_values.empty else 0.0
+                if reference_mean <= 0:
+                    skipped_series.append(str(series))
+                    continue
+                model = _select_display_model(str(series), group, metrics, reference_mean)
+                if model is None:
+                    skipped_series.append(str(series))
+                    continue
                 actual["variable"] = "Actual"
                 actual["series"] = str(series)
-                predicted = group[group["model"] == model].copy()
+                predicted = group[group["model"].astype(str) == model].copy()
                 predicted["variable"] = model
                 predicted["series"] = str(series)
                 predicted = predicted.rename(columns={"predicted": "value"})
@@ -407,14 +438,25 @@ def _forecast_section(
                 color="variable",
                 facet_col="series",
                 facet_col_wrap=2,
-                title="Forecast vs actual on the test window (best model per series)",
+                title="Forecast vs actual on the test window (visible model per series)",
                 labels={"value": "Daily new cases, 7-day smoothed"},
             )
+            figure.update_yaxes(matches=None, showticklabels=True)
             figure.update_layout(
                 margin={"l": 20, "r": 20, "t": 60, "b": 20},
                 legend_title_text="Series",
+                height=600,
             )
             children.extend([html.H2("Forecast vs actual"), dcc.Graph(figure=figure)])
+            if skipped_series:
+                children.append(
+                    html.P(
+                        "Omitted from the plot because the target series is all zero "
+                        "or no model produces a visible forecast: "
+                        + ", ".join(sorted(skipped_series)),
+                        style={"color": "#666", "fontSize": "12px"},
+                    )
+                )
         except (KeyError, ValueError, TypeError):
             children.append(
                 html.Div(
@@ -426,14 +468,36 @@ def _forecast_section(
         if not future_predictions.empty:
             try:
                 future_parts: list[pd.DataFrame] = []
+                skipped_future: list[str] = []
                 for series, group in future_predictions.groupby("series"):
-                    model = best_models.get(str(series))
-                    if not model or model not in set(group["model"]):
-                        model = str(group["model"].dropna().iloc[0])
-                    predicted = group[group["model"] == model].copy()
+                    recent_actual = test_predictions[
+                        test_predictions["series"] == series
+                    ][["date", "actual"]].drop_duplicates(subset=["date"])
+                    recent_values = pd.to_numeric(
+                        recent_actual["actual"], errors="coerce"
+                    ).dropna()
+                    reference_mean = (
+                        float(recent_values.mean()) if not recent_values.empty else 0.0
+                    )
+                    if reference_mean <= 0:
+                        skipped_future.append(str(series))
+                        continue
+                    model = _select_display_model(
+                        str(series), group, metrics, reference_mean, require_variance=True
+                    )
+                    if model is None:
+                        skipped_future.append(str(series))
+                        continue
+                    actual = recent_actual.rename(columns={"actual": "value"})
+                    actual["variable"] = "Actual (recent)"
+                    actual["series"] = str(series)
+                    predicted = group[group["model"].astype(str) == model].copy()
                     predicted["variable"] = model
                     predicted["series"] = str(series)
                     predicted = predicted.rename(columns={"predicted": "value"})
+                    future_parts.append(
+                        actual[["date", "value", "variable", "series"]]
+                    )
                     future_parts.append(
                         predicted[["date", "value", "variable", "series"]]
                     )
@@ -449,12 +513,14 @@ def _forecast_section(
                     color="variable",
                     facet_col="series",
                     facet_col_wrap=2,
-                    title="Future forecast after each series ends (best model per series)",
+                    title="Future forecast after each series ends (visible model per series)",
                     labels={"value": "Forecasted daily new cases, 7-day smoothed"},
                 )
+                future_figure.update_yaxes(matches=None, showticklabels=True)
                 future_figure.update_layout(
                     margin={"l": 20, "r": 20, "t": 60, "b": 20},
                     legend_title_text="Series",
+                    height=600,
                 )
                 future_start = future_long["date"].min()
                 future_end = future_long["date"].max()
@@ -466,12 +532,22 @@ def _forecast_section(
                             f"{_format_date(future_start)} — {_format_date(future_end)}. "
                             "For global/CHN/IND the future window starts after the "
                             "dataset end (2026-10-18); countries with earlier reporting "
-                            "end have earlier future windows.",
+                            "end have earlier future windows. Series with all-zero "
+                            "target values are omitted.",
                             style={"color": "#555"},
                         ),
                         dcc.Graph(figure=future_figure),
                     ]
                 )
+                if skipped_future:
+                    children.append(
+                        html.P(
+                            "Omitted from the future chart because the target is all "
+                            "zero or no model produces a visible future forecast: "
+                            + ", ".join(sorted(skipped_future)),
+                            style={"color": "#666", "fontSize": "12px"},
+                        )
+                    )
             except (KeyError, ValueError, TypeError):
                 children.append(
                     html.Div(

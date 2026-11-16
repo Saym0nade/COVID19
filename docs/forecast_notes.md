@@ -110,3 +110,9 @@ On the merged parquet (single local run, 6 series × 6 models):
   automatically by `statsmodels`.
 - The dashboard reads forecast CSVs only if they exist, so it still runs before
   forecasts are generated. Future rows are rendered in a separate chart.
+- Forecast plots choose a visible model per series: the lowest-MAE model whose
+  predictions are non-zero and, for the future chart, not flat. Series with an
+  all-zero target (for example CHN/IND) are omitted from plots so that panels are
+  not empty; they remain in metrics and prediction CSVs.
+- Facet y-axes are independent (`matches=None`), so series with very different
+  scales remain visible in their own panels.
