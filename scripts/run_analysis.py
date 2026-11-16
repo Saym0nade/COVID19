@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,7 @@ from src.analytics import (  # noqa: E402
     correlation_matrix,
     descriptive_stats,
     detect_outliers_iqr,
+    iqr_bounds,
     missing_report,
     outlier_summary,
 )
@@ -38,8 +40,20 @@ from src.config import (  # noqa: E402
     OUTPUTS_DIR,
     PROCESSED_DATA_PATH,
 )
-from src.timeseries import resample_series, rolling_average  # noqa: E402
-from src.visuals import save_correlation_heatmap  # noqa: E402
+from src.timeseries import (  # noqa: E402
+    WAVE_COLUMNS,
+    detect_waves,
+    resample_series,
+    rolling_average,
+    seasonal_decompose,
+)
+from src.visuals import (  # noqa: E402
+    save_correlation_heatmap,
+    save_global_trend,
+    save_outlier_boxplots,
+    save_vaccination_rollout,
+    save_waves_chart,
+)
 
 GROUP_COLUMNS = ["iso_code", "location"]
 FREQUENCY = "W"
@@ -52,6 +66,16 @@ OUTLIER_COLUMNS = [
     "gdp_per_capita",
     "human_development_index",
 ]
+WAVE_VALUE_COLUMN = "new_cases_smoothed"
+WAVE_PARAMETERS = {
+    "rolling_window": 7,
+    "distance_days": 30,
+    "prominence_ratio": 0.05,
+    "onset_ratio": 0.10,
+    "min_peak_value": 0.0,
+    "include_aggregates": False,
+}
+MAX_OUTLIERS_PER_COLUMN = 250
 CORRELATION_COLUMNS = [
     "new_cases_per_million",
     "new_deaths_per_million",
@@ -125,10 +149,61 @@ def _sanitize(value):
     return str(value)
 
 
-def build_outliers(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def build_outliers(
+    frame: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, list[dict] | int]]:
+    """Return capped outlier rows plus the full IQR summary and policy details.
+
+    Policy: columns whose IQR is zero (typically zero-inflated daily counts) are
+    skipped because every positive value would be an "outlier"; for the
+    remaining columns only the ``MAX_OUTLIERS_PER_COLUMN`` most severe rows
+    (largest distance beyond the nearest IQR bound) are kept. This keeps
+    ``outputs/outliers.csv`` interpretable instead of writing hundreds of
+    thousands of near-duplicate rows.
+    """
     columns = [column for column in OUTLIER_COLUMNS if column in frame.columns]
-    frames = [detect_outliers_iqr(frame, column) for column in columns]
-    frames = [item for item in frames if not item.empty]
+    detection_frame = frame
+    excluded_aggregate_rows = 0
+    if "iso_code" in frame.columns:
+        iso = frame["iso_code"].astype("string").str.strip()
+        keep = iso.notna() & (iso != "") & ~iso.str.startswith("OWID_", na=False)
+        detection_frame = frame.loc[keep]
+        excluded_aggregate_rows = int((~keep).sum())
+    frames: list[pd.DataFrame] = []
+    skipped: list[dict] = []
+    retained: dict[str, int] = {}
+    for column in columns:
+        bounds = iqr_bounds(detection_frame, column)
+        if bounds is None:
+            skipped.append({"column": column, "reason": "no data"})
+            continue
+        if not math.isfinite(bounds["iqr"]) or bounds["iqr"] <= 0:
+            skipped.append(
+                {
+                    "column": column,
+                    "reason": "zero IQR",
+                    "outlier_count": bounds["outlier_count"],
+                }
+            )
+            continue
+        part = detect_outliers_iqr(detection_frame, column)
+        if part.empty:
+            retained[column] = 0
+            continue
+        severity = pd.concat(
+            [
+                part["lower_bound"] - part["value"],
+                part["value"] - part["upper_bound"],
+            ],
+            axis=1,
+        ).max(axis=1)
+        part = part.assign(_severity=severity).sort_values(
+            "_severity", ascending=False, kind="stable"
+        )
+        part = part.head(MAX_OUTLIERS_PER_COLUMN).drop(columns="_severity")
+        retained[column] = int(part.shape[0])
+        frames.append(part)
+
     if frames:
         outliers = pd.concat(frames, ignore_index=True)
     else:
@@ -143,8 +218,54 @@ def build_outliers(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                 "upper_bound",
             ]
         )
-    summary = outlier_summary(frame, columns)
-    return outliers, summary
+    summary = outlier_summary(detection_frame, columns)
+    policy = {
+        "rule": "1.5 x IQR per column",
+        "aggregate_rows_excluded": True,
+        "excluded_aggregate_rows": excluded_aggregate_rows,
+        "skipped_columns": skipped,
+        "retained_rows_per_column": retained,
+        "max_rows_per_column": MAX_OUTLIERS_PER_COLUMN,
+        "selection": "largest distance beyond nearest IQR bound",
+    }
+    return outliers, summary, policy
+
+
+def build_waves(frame: pd.DataFrame) -> pd.DataFrame:
+    """Detect per-country waves on the smoothed series, with a raw fallback."""
+    value_column = WAVE_VALUE_COLUMN
+    if value_column not in frame.columns:
+        value_column = "new_cases"
+    if value_column not in frame.columns:
+        return pd.DataFrame(columns=WAVE_COLUMNS)
+    return detect_waves(
+        frame,
+        value_column=value_column,
+        **WAVE_PARAMETERS,
+    )
+
+
+def build_seasonal(frame: pd.DataFrame):
+    """Decompose the global daily case series (weekly seasonality, period=7)."""
+    try:
+        iso = frame.get("iso_code")
+        if iso is not None and (iso.astype("string") == "OWID_WRL").any():
+            global_frame = frame.loc[iso.astype("string") == "OWID_WRL"]
+        else:
+            global_frame = frame
+        return seasonal_decompose(
+            global_frame,
+            value_column="new_cases",
+            period=7,
+            agg="sum",
+            model="additive",
+        )
+    except Exception as error:  # noqa: BLE001
+        print(
+            "WARNING: seasonal decomposition skipped: "
+            f"{type(error).__name__}: {error}"
+        )
+        return None
 
 
 def build_correlations(
@@ -252,19 +373,27 @@ def main() -> int:
 
     missing = missing_report(frame)
     stats = descriptive_stats(frame)
-    outliers, outlier_stats = build_outliers(frame)
+    outliers, outlier_stats, outlier_policy = build_outliers(frame)
     matrix, correlation_long, correlation_features = build_correlations(frame)
     timeseries = build_timeseries(frame)
+    waves = build_waves(frame)
+    decomposition = build_seasonal(frame)
 
     outliers_path = OUTPUTS_DIR / "outliers.csv"
     correlation_path = OUTPUTS_DIR / "correlation.csv"
     timeseries_path = OUTPUTS_DIR / "timeseries.csv"
+    waves_path = OUTPUTS_DIR / "waves.csv"
     summary_path = OUTPUTS_DIR / "eda_summary.json"
     heatmap_path = FIGURES_DIR / "correlation_heatmap.png"
+    trend_path = FIGURES_DIR / "global_cases_deaths.png"
+    vaccination_path = FIGURES_DIR / "vaccination_rollout_by_region.png"
+    waves_figure_path = FIGURES_DIR / "waves_chart.png"
+    outliers_figure_path = FIGURES_DIR / "outliers_boxplot.png"
 
     outliers.to_csv(outliers_path, index=False)
     correlation_long.to_csv(correlation_path, index=False)
     timeseries.to_csv(timeseries_path, index=False)
+    waves[WAVE_COLUMNS].to_csv(waves_path, index=False)
 
     total_cells = int(frame.shape[0] * frame.shape[1])
     total_missing = int(frame.isna().sum().sum())
@@ -290,21 +419,79 @@ def main() -> int:
             "rows": int(timeseries.shape[0]),
             "windows": list(WINDOWS),
         },
+        "outlier_policy": outlier_policy,
+        "waves": {
+            "value_column": WAVE_VALUE_COLUMN
+            if WAVE_VALUE_COLUMN in frame.columns
+            else "new_cases",
+            "parameters": WAVE_PARAMETERS,
+            "rows": int(waves.shape[0]),
+            "countries": int(
+                waves["iso_code"].nunique() if "iso_code" in waves else 0
+            ),
+            "median_waves_per_country": float(
+                waves.groupby("iso_code").size().median()
+            )
+            if not waves.empty
+            else None,
+        },
+        "seasonal_decomposition": None
+        if decomposition is None
+        else {
+            "value_column": decomposition.value_column,
+            "period": decomposition.period,
+            "model": decomposition.model,
+            "frequency": decomposition.frequency,
+            **decomposition.summary(),
+        },
+    }
+    def render(label: str, callback) -> Path | None:
+        try:
+            written = callback()
+        except Exception as error:  # noqa: BLE001
+            print(f"WARNING: could not save {label}: {type(error).__name__}: {error}")
+            return None
+        if written is None:
+            print(f"WARNING: {label} was not generated (missing inputs)")
+            return None
+        return written
+
+    figures = {
+        "global_cases_deaths": render(
+            "global trend",
+            lambda: save_global_trend(frame, trend_path),
+        ),
+        "vaccination_rollout_by_region": render(
+            "vaccination rollout",
+            lambda: save_vaccination_rollout(frame, vaccination_path),
+        ),
+        "waves_chart": render(
+            "waves chart",
+            lambda: save_waves_chart(waves, frame, waves_figure_path),
+        ),
+        "outliers_boxplot": render(
+            "outlier boxplots",
+            lambda: save_outlier_boxplots(
+                frame, OUTLIER_COLUMNS, outliers_figure_path
+            ),
+        ),
+        "correlation_heatmap": render(
+            "correlation heatmap",
+            lambda: save_correlation_heatmap(
+                matrix,
+                heatmap_path,
+                title="COVID-19 feature correlations (Pearson)",
+            ),
+        ),
+    }
+    summary["visualizations"] = {
+        key: (str(value) if value is not None else None)
+        for key, value in figures.items()
     }
     summary_path.write_text(
         json.dumps(_sanitize(summary), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-
-    heatmap_written = None
-    try:
-        heatmap_written = save_correlation_heatmap(
-            matrix,
-            heatmap_path,
-            title="COVID-19 feature correlations (Pearson)",
-        )
-    except Exception as error:  # noqa: BLE001
-        print(f"WARNING: could not save heatmap: {type(error).__name__}: {error}")
 
     print("")
     print(f"Dataset          : {source_path}")
@@ -313,9 +500,13 @@ def main() -> int:
         "Missing cells    : "
         f"{total_missing:,}/{total_cells:,} ({summary['missing_summary']['missing_percent']:.2f}%)"
     )
+    retained_columns = len(
+        [value for value in outlier_policy["retained_rows_per_column"].values() if value]
+    )
     print(
-        f"Outliers         : {len(outliers):,} rows across "
-        f"{0 if outlier_stats.empty else len(outlier_stats)} columns -> {outliers_path}"
+        f"Outliers         : {len(outliers):,} rows across {retained_columns} "
+        f"columns (capped at {MAX_OUTLIERS_PER_COLUMN}/column; "
+        f"{len(outlier_policy['skipped_columns'])} columns skipped) -> {outliers_path}"
     )
     print(
         f"Correlation      : {len(correlation_features)} features, "
@@ -325,8 +516,14 @@ def main() -> int:
         f"Time series      : {len(timeseries):,} rows at frequency '{FREQUENCY}' "
         f"-> {timeseries_path}"
     )
+    print(
+        f"Waves            : {len(waves):,} intervals across "
+        f"{int(waves['iso_code'].nunique()) if not waves.empty else 0} countries "
+        f"-> {waves_path}"
+    )
     print(f"EDA summary      : {summary_path}")
-    print(f"Heatmap          : {heatmap_written or '(not generated)'}")
+    for name, path in figures.items():
+        print(f"Figure           : {name:28s} {path or '(not generated)'}")
     return 0
 
 
