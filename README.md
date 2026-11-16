@@ -107,7 +107,7 @@ python -m src.app                      # интерактивный дашбор
 | `outputs/eda_summary.json`, `outputs/outliers.csv`, `outputs/correlation.csv`, `outputs/timeseries.csv` | Результаты EDA и анализа временных рядов |
 | `figures/*.png` | Статические графики анализа |
 
-Дашборд содержит вкладки **Overview**, **Waves**, **Vaccination vs Mortality**, **Forecast** и **Data/SQL**. Фильтры `year`, `region`, `category` применяются к обзорным графикам, scatter-графику вакцинации и предпросмотру данных. Необязательные файлы (`waves.csv`, `forecast_*.csv`, `outputs/sql/*.csv`) подхватываются автоматически, а при их отсутствии соответствующая вкладка показывает подсказку вместо ошибки.
+Дашборд содержит вкладки **Overview**, **World Map**, **Waves**, **Vaccination vs Mortality**, **Forecast** и **Data/SQL**. Фильтры `year`, `region`, `category` применяются к обзорным графикам, scatter-графику вакцинации и предпросмотру данных. **World Map** имеет собственный выбор метрики и недельный слайдер с Play/Pause: карта показывает per-million случаи/смерти, накопленные per-million показатели, вакцинацию и stringency по неделям. Необязательные файлы (`waves.csv`, `forecast_*.csv`, `outputs/sql/*.csv`) подхватываются автоматически, а при их отсутствии соответствующая вкладка показывает подсказку вместо ошибки.
 
 Сравнение прогнозов включает 6 моделей: naive, seasonal naive, moving average, Linear Regression, библиотечный Holt-Winters/ETS и обучаемый PyTorch LSTM. Обучение заканчивается **2023-12-31**, оценка строится на полном ряду с **2024-01-01 до конца датасета** (2026-10-18), затем модели сравниваются с недавними реальными данными (последние 90 дней), и лучшая recent-модель строит future-прогноз **до 2027-01-01**. Top-5 стран выбираются среди стран с достаточным ненулевым target после 2023 года. Для графиков выбирается видимая модель с ненулевым прогнозом, а серии без видимого прогноза не отображаются, чтобы панели не были пустыми. Для CPU-only установки PyTorch можно использовать `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
 
@@ -158,6 +158,7 @@ python3 scripts/prepare_data.py
 │   ├── phase0_report.md
 │   ├── analysis_notes.md
 │   ├── forecast_notes.md
+│   ├── map_notes.md
 │   ├── sql_notes.md
 │   └── er_diagram.md
 ├── figures/

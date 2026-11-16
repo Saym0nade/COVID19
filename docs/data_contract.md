@@ -241,8 +241,19 @@ Catalog sample использует нормализованные имена `i
 - Технология: Dash + Plotly.
 - Фильтры: `year`, `region`, `category`; при возможности `country`.
 - Минимум 4–5 визуализаций, минимум 1 интерактивная Plotly.
+- Вкладка **World Map**:
+  - choropleth по `iso_code` (`locationmode="ISO-3"`);
+  - недельная агрегация (`W-SUN`);
+  - метрики: `new_cases_smoothed_per_million`,
+    `new_deaths_smoothed_per_million`, `total_cases_per_million`,
+    `total_deaths_per_million`, `people_vaccinated_per_hundred`,
+    `people_fully_vaccinated_per_hundred`, `stringency_index`;
+  - слайдер недели + Play/Pause;
+  - cumulative/coverage метрики forward-fill по стране; flow-метрики — без fill;
+  - фильтры `year`/`region`/`category` на карту не распространяются.
 - Данные для Phase 0: `data/sample/owid-catalog-sample.csv`; fallback — `data/sample/owid-covid-sample.csv`.
 - Данные для финала: `data/covid.db`, `data/processed/covid_merged.parquet` или `data/processed/covid_clean.parquet`.
+- Детали карты: `docs/map_notes.md`.
 
 ## 11. Ответственность и синхронизация
 

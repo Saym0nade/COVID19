@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
-from dash import Dash, Input, Output, dcc, html
+from dash import Dash, Input, Output, State, dcc, html, no_update
 
 try:
     from .analytics import add_derived_fields
@@ -30,6 +30,50 @@ METRICS = {
     "new_cases_smoothed": "New cases, 7-day smoothed",
     "new_deaths_smoothed": "New deaths, 7-day smoothed",
     "people_vaccinated_per_hundred": "Vaccinated per 100 people",
+}
+MAP_METRICS = {
+    "new_cases_smoothed_per_million": {
+        "label": "New cases per million",
+        "agg": "mean",
+        "scale": "Viridis",
+    },
+    "new_deaths_smoothed_per_million": {
+        "label": "New deaths per million",
+        "agg": "mean",
+        "scale": "Inferno",
+    },
+    "total_cases_per_million": {
+        "label": "Total cases per million",
+        "agg": "last",
+        "scale": "YlOrRd",
+        "fill": "ffill",
+    },
+    "total_deaths_per_million": {
+        "label": "Total deaths per million",
+        "agg": "last",
+        "scale": "Reds",
+        "fill": "ffill",
+    },
+    "people_vaccinated_per_hundred": {
+        "label": "Vaccinated per 100 people",
+        "agg": "last",
+        "scale": "Blues",
+        "fixed_range": (0.0, 100.0),
+        "fill": "ffill",
+    },
+    "people_fully_vaccinated_per_hundred": {
+        "label": "Fully vaccinated per 100 people",
+        "agg": "last",
+        "scale": "Blues",
+        "fixed_range": (0.0, 100.0),
+        "fill": "ffill",
+    },
+    "stringency_index": {
+        "label": "Stringency index",
+        "agg": "mean",
+        "scale": "Cividis",
+        "fixed_range": (0.0, 100.0),
+    },
 }
 PREVIEW_COLUMNS = [
     "date",
@@ -858,6 +902,143 @@ def _vaccination_figure(filtered: pd.DataFrame):
     return figure
 
 
+def prepare_map_data(frame: pd.DataFrame) -> tuple:
+    if frame is None or frame.empty:
+        return pd.DataFrame(), [], {}, {}
+    required = {"date", "iso_code", "location"}
+    if not required.issubset(frame.columns):
+        return pd.DataFrame(), [], {}, {}
+
+    data = frame.copy()
+    data["date"] = pd.to_datetime(data["date"], errors="coerce")
+    iso = data["iso_code"].astype("string").str.strip()
+    valid = (
+        iso.notna()
+        & iso.str.len().eq(3).fillna(False)
+        & ~iso.str.startswith("OWID_").fillna(False)
+    )
+    data = data[valid & data["date"].notna()].copy()
+    if data.empty:
+        return pd.DataFrame(), [], {}, {}
+
+    data["week"] = data["date"].dt.to_period("W-SUN").dt.start_time
+    group_columns = ["week", "iso_code", "location"]
+    if "continent" in data.columns:
+        group_columns.append("continent")
+    aggregations = {
+        metric: config["agg"]
+        for metric, config in MAP_METRICS.items()
+        if metric in data.columns
+    }
+    if not aggregations:
+        return pd.DataFrame(), [], {}, {}
+
+    map_frame = (
+        data.groupby(group_columns, dropna=False)
+        .agg(aggregations)
+        .reset_index()
+        .sort_values(["iso_code", "week"])
+        .reset_index(drop=True)
+    )
+    fill_metrics = [
+        metric
+        for metric, config in MAP_METRICS.items()
+        if config.get("fill") == "ffill" and metric in map_frame.columns
+    ]
+    for metric in fill_metrics:
+        map_frame[metric] = map_frame.groupby("iso_code", group_keys=False)[
+            metric
+        ].ffill()
+    map_frame = map_frame.sort_values(["week", "location"]).reset_index(drop=True)
+    weeks = sorted(pd.Timestamp(value) for value in map_frame["week"].dropna().unique())
+    marks = {}
+    if weeks:
+        step = max(1, len(weeks) // 8)
+        for index in range(0, len(weeks), step):
+            marks[index] = weeks[index].strftime("%Y-%m")
+        marks[len(weeks) - 1] = weeks[-1].strftime("%Y-%m")
+
+    color_ranges = {}
+    for metric in aggregations:
+        values = pd.to_numeric(map_frame[metric], errors="coerce").dropna()
+        if values.empty:
+            continue
+        fixed = MAP_METRICS[metric].get("fixed_range")
+        if fixed is not None:
+            low, high = fixed
+        else:
+            low = float(values.quantile(0.02))
+            high = float(values.quantile(0.98))
+            if high <= low:
+                high = low + 1.0
+        color_ranges[metric] = (float(low), float(high))
+    return map_frame, weeks, marks, color_ranges
+
+
+def _world_map_figure(
+    map_frame: pd.DataFrame,
+    weeks: list,
+    color_ranges: dict,
+    metric: str | None,
+    week_index: int | None,
+):
+    if map_frame.empty or not weeks or metric not in map_frame.columns:
+        return _empty_figure("World map data is not available"), "n/a"
+    index = max(0, min(int(week_index or 0), len(weeks) - 1))
+    week = weeks[index]
+    config = MAP_METRICS[metric]
+    metric_frame = map_frame[map_frame[metric].notna()].copy()
+    if metric_frame.empty:
+        return _empty_figure(f"No {config['label']} data available"), "n/a"
+    snapshot = metric_frame[metric_frame["week"] == week].copy()
+    display_week = week
+    suffix = ""
+    if snapshot.empty:
+        available = sorted(
+            pd.Timestamp(value) for value in metric_frame["week"].dropna().unique()
+        )
+        previous = [value for value in available if value <= week]
+        display_week = previous[-1] if previous else available[0]
+        snapshot = metric_frame[metric_frame["week"] == display_week].copy()
+        suffix = " (nearest available week)"
+    label = (
+        f"{config['label']} — week of {_format_date(display_week)}{suffix}"
+    )
+
+    hover_data = {"week": False, "iso_code": False, metric: ":.2f"}
+    if "continent" in snapshot.columns:
+        hover_data["continent"] = True
+    low, high = color_ranges.get(metric, (None, None))
+    figure = px.choropleth(
+        snapshot,
+        locations="iso_code",
+        color=metric,
+        hover_name="location",
+        hover_data=hover_data,
+        locationmode="ISO-3",
+        color_continuous_scale=config["scale"],
+        range_color=[low, high] if low is not None and high is not None else None,
+        labels={metric: config["label"]},
+        title=label,
+    )
+    figure.update_geos(
+        projection_type="natural earth",
+        showcountries=True,
+        countrycolor="#d0d0d0",
+        showcoastlines=True,
+        coastlinecolor="#b0b0b0",
+        bgcolor="#f7f9fb",
+        showframe=False,
+        lataxis_range=[-60, 85],
+    )
+    figure.update_layout(
+        margin={"l": 10, "r": 10, "t": 50, "b": 10},
+        height=620,
+        coloraxis_colorbar={"title": config["label"]},
+    )
+    return figure, label
+
+
 def build_app(
     frame: pd.DataFrame,
     forecast_metrics: pd.DataFrame | None = None,
@@ -886,6 +1067,16 @@ def build_app(
     years = sorted(int(year) for year in frame["year"].dropna().unique())
     regions = sorted(frame["region"].dropna().unique())
     categories = sorted(frame["category"].dropna().unique())
+    map_frame, map_weeks, map_marks, map_color_ranges = prepare_map_data(frame)
+    map_metric_options = [
+        {"label": MAP_METRICS[metric]["label"], "value": metric}
+        for metric in MAP_METRICS
+        if metric in map_frame.columns
+    ]
+    map_default_metric = (
+        map_metric_options[0]["value"] if map_metric_options else None
+    )
+    map_ready = bool(map_weeks and map_metric_options)
 
     app = Dash(__name__)
     app.title = "COVID-19 Global Dynamics"
@@ -964,6 +1155,99 @@ def build_app(
         ],
     )
 
+    if map_ready:
+        map_tab = dcc.Tab(
+            label="World Map",
+            children=[
+                html.H2("World map"),
+                html.P(
+                    "Weekly country-level choropleth. Move the time slider or use "
+                    "Play to animate the selected metric. Grey countries have no "
+                    "value for the selected week.",
+                    style={"color": "#555"},
+                ),
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Label("Map metric"),
+                                dcc.Dropdown(
+                                    id="map-metric",
+                                    options=map_metric_options,
+                                    value=map_default_metric,
+                                    clearable=False,
+                                ),
+                            ],
+                            style={"flex": "1", "minWidth": "260px"},
+                        ),
+                        html.Div(
+                            [
+                                html.Label("Playback"),
+                                html.Div(
+                                    [
+                                        html.Button(
+                                            "Play",
+                                            id="map-play",
+                                            n_clicks=0,
+                                            style={"padding": "6px 14px"},
+                                        ),
+                                        html.Div(
+                                            id="map-week-label",
+                                            style={
+                                                "marginLeft": "12px",
+                                                "fontWeight": "600",
+                                            },
+                                        ),
+                                    ],
+                                    style={
+                                        "display": "flex",
+                                        "alignItems": "center",
+                                        "minHeight": "36px",
+                                    },
+                                ),
+                            ],
+                            style={"flex": "1", "minWidth": "260px"},
+                        ),
+                    ],
+                    style={
+                        "display": "flex",
+                        "gap": "20px",
+                        "flexWrap": "wrap",
+                        "marginTop": "12px",
+                    },
+                ),
+                dcc.Slider(
+                    id="map-week-slider",
+                    min=0,
+                    max=len(map_weeks) - 1,
+                    value=len(map_weeks) - 1,
+                    step=1,
+                    marks=map_marks,
+                    updatemode="drag",
+                    tooltip={"placement": "bottom", "always_visible": False},
+                ),
+                dcc.Graph(id="world-map", style={"height": "620px"}),
+                dcc.Store(id="map-play-state", data=False),
+                dcc.Interval(
+                    id="map-interval",
+                    interval=700,
+                    n_intervals=0,
+                    disabled=True,
+                ),
+            ],
+        )
+    else:
+        map_tab = dcc.Tab(
+            label="World Map",
+            children=[
+                html.Div(
+                    "World map data is not available. Build the merged dataset or "
+                    "catalog sample first.",
+                    style=MESSAGE_STYLE,
+                )
+            ],
+        )
+
     vaccination_tab = dcc.Tab(
         label="Vaccination vs Mortality",
         children=[
@@ -1008,12 +1292,14 @@ def build_app(
             html.P(
                 "Interactive dashboard using the merged OWID ETL catalog + legacy "
                 "GitHub data with sample fallback. Filters apply to Overview, "
-                "Vaccination vs Mortality and the data preview."
+                "Vaccination vs Mortality and the data preview. World Map has its "
+                "own metric and weekly time controls."
             ),
             filter_bar,
             dcc.Tabs(
                 [
                     overview_tab,
+                    map_tab,
                     waves_tab,
                     vaccination_tab,
                     forecast_tab,
@@ -1114,6 +1400,46 @@ def build_app(
             yaxis_title="Location",
         )
         return figure, region_figure, vaccination_figure, kpi, preview
+
+    if map_ready:
+
+        @app.callback(
+            Output("world-map", "figure"),
+            Output("map-week-label", "children"),
+            Input("map-metric", "value"),
+            Input("map-week-slider", "value"),
+        )
+        def update_world_map(metric, week_index):
+            return _world_map_figure(
+                map_frame, map_weeks, map_color_ranges, metric, week_index
+            )
+
+        @app.callback(
+            Output("map-play-state", "data"),
+            Output("map-play", "children"),
+            Output("map-interval", "disabled"),
+            Input("map-play", "n_clicks"),
+            State("map-play-state", "data"),
+            prevent_initial_call=True,
+        )
+        def toggle_map_play(_n_clicks, playing):
+            is_playing = not bool(playing)
+            return is_playing, "Pause" if is_playing else "Play", not is_playing
+
+        @app.callback(
+            Output("map-week-slider", "value"),
+            Input("map-interval", "n_intervals"),
+            State("map-play-state", "data"),
+            State("map-week-slider", "value"),
+            State("map-week-slider", "max"),
+            prevent_initial_call=True,
+        )
+        def advance_map(_n_intervals, playing, current, maximum):
+            if not playing or maximum is None:
+                return no_update
+            current = int(current or 0)
+            maximum = int(maximum)
+            return 0 if current >= maximum else current + 1
 
     return app
 
