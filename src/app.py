@@ -331,7 +331,9 @@ def _forecast_section(
         children.extend(
             [
                 html.P(
-                    "MAE / RMSE for the 30-day time-based holdout (lower is better).",
+                    "MAE / RMSE for the 30-day time-based holdout (lower is better). "
+                    "Models include naive, seasonal naive, moving average, linear "
+                    "regression, library Holt-Winters/ETS and a trained PyTorch LSTM.",
                     style={"color": "#555"},
                 ),
                 _dataframe_table(
@@ -369,8 +371,15 @@ def _forecast_section(
                         group.sort_values("mae").iloc[0]["model"]
                     )
 
+            if "split" in predictions.columns:
+                test_predictions = predictions[predictions["split"] == "test"].copy()
+                future_predictions = predictions[predictions["split"] == "future"].copy()
+            else:
+                test_predictions = predictions.copy()
+                future_predictions = predictions.iloc[0:0].copy()
+
             parts: list[pd.DataFrame] = []
-            for series, group in predictions.groupby("series"):
+            for series, group in test_predictions.groupby("series"):
                 model = best_models.get(str(series))
                 if not model or model not in set(group["model"]):
                     model = str(group["model"].dropna().iloc[0])
@@ -410,6 +419,71 @@ def _forecast_section(
             children.append(
                 html.Div(
                     "Forecast predictions could not be rendered.",
+                    style=MESSAGE_STYLE,
+                )
+            )
+
+        if not future_predictions.empty:
+            try:
+                future_parts: list[pd.DataFrame] = []
+                for series, group in future_predictions.groupby("series"):
+                    model = best_models.get(str(series))
+                    if not model or model not in set(group["model"]):
+                        model = str(group["model"].dropna().iloc[0])
+                    predicted = group[group["model"] == model].copy()
+                    predicted["variable"] = model
+                    predicted["series"] = str(series)
+                    predicted = predicted.rename(columns={"predicted": "value"})
+                    future_parts.append(
+                        predicted[["date", "value", "variable", "series"]]
+                    )
+                future_long = pd.concat(future_parts, ignore_index=True).dropna(
+                    subset=["value"]
+                )
+                if future_long.empty:
+                    raise ValueError("no future prediction values")
+                future_figure = px.line(
+                    future_long,
+                    x="date",
+                    y="value",
+                    color="variable",
+                    facet_col="series",
+                    facet_col_wrap=2,
+                    title="Future forecast after each series ends (best model per series)",
+                    labels={"value": "Forecasted daily new cases, 7-day smoothed"},
+                )
+                future_figure.update_layout(
+                    margin={"l": 20, "r": 20, "t": 60, "b": 20},
+                    legend_title_text="Series",
+                )
+                future_start = future_long["date"].min()
+                future_end = future_long["date"].max()
+                children.extend(
+                    [
+                        html.H2("Future forecast"),
+                        html.P(
+                            f"Predictions after each series' last available target date: "
+                            f"{_format_date(future_start)} — {_format_date(future_end)}. "
+                            "For global/CHN/IND the future window starts after the "
+                            "dataset end (2026-10-18); countries with earlier reporting "
+                            "end have earlier future windows.",
+                            style={"color": "#555"},
+                        ),
+                        dcc.Graph(figure=future_figure),
+                    ]
+                )
+            except (KeyError, ValueError, TypeError):
+                children.append(
+                    html.Div(
+                        "Future forecasts could not be rendered.",
+                        style=MESSAGE_STYLE,
+                    )
+                )
+        else:
+            children.append(
+                html.Div(
+                    "Future forecasts are not available yet. "
+                    "Run: python scripts/run_forecast.py",
                     style=MESSAGE_STYLE,
                 )
             )

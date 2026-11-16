@@ -42,9 +42,16 @@ Current merged-parquet run:
 - Defaults: `--test-days 90`, `--horizon 30`.
 - Evaluation and prediction exports use the first `min(horizon, len(test))` days
   after the train cutoff, so the 30-day horizon is comparable across series.
+- **Future forecast:** each model is refitted on the full series and predicts
+  `--future-horizon` days after the last available target date of that series.
+  The default is 30 days. For `global`, `country:CHN` and `country:IND` this is
+  after the dataset end (2026-10-18); USA/FRA/DEU have target data ending
+  earlier, so their future windows start earlier. Future rows are exported with
+  `split="future"` and an empty `actual` value.
 - Run: `.venv/bin/python scripts/run_forecast.py`
-  (optional flags: `--test-days`, `--horizon`, `--season-length`, `--window`,
-  `--top-n`).
+  (optional flags: `--test-days`, `--horizon`, `--future-horizon`,
+  `--season-length`, `--window`, `--top-n`, `--lstm-lookback`,
+  `--lstm-hidden`, `--lstm-epochs`, `--seed`).
 
 ## Models
 
@@ -53,6 +60,14 @@ Current merged-parquet run:
 - `moving_average` — mean of the last 7 observations, flat forecast.
 - `linear_regression` — SciPy `linregress` on a time index, extrapolated and
   clipped at zero.
+- `holt_winters` — library-provided `statsmodels` Holt-Winters / Exponential
+  Smoothing with additive trend, additive weekly seasonality and damped trend.
+  This is the "ready-made" model loaded from a library rather than implemented
+  from scratch.
+- `lstm` — trainable PyTorch LSTM trained on sliding windows of the target
+  series. Defaults: lookback 30 days, hidden size 32, 40 epochs, Adam,
+  batch size 32, fixed seed 42. The series is transformed with `log1p` and
+  min-max scaled; predictions are clipped to the historical range.
 
 ## Metrics and outputs
 
@@ -63,17 +78,23 @@ Current merged-parquet run:
   `model`, `mae`, `rmse`, `fit_seconds`, `predict_seconds`, `peak_memory_mb`,
   `train_start`, `train_end`, `test_start`, `test_end`.
 - `outputs/forecast_predictions.csv` — `series`, `date`, `actual`, `predicted`,
-  `model`, `split` on the test window. Both schemas are unchanged from days 1-3;
-  only the number of series grows.
+  `model`, `split`. `split` is `test` for the holdout and `future` for dates
+  after the dataset ends.
+- `outputs/forecast_future.csv` — only `split="future"` rows for convenience.
+- `outputs/forecast_metrics.csv` schema is unchanged: `series`, `model`, `mae`,
+  `rmse`, `fit_seconds`, `predict_seconds`, `peak_memory_mb`, `train_start`,
+  `train_end`, `test_start`, `test_end`.
 
 ## Measured time and memory
 
-On the merged parquet (single local run, 6 series × 4 models):
+On the merged parquet (single local run, 6 series × 6 models):
 
-- wall time: about 2.0 seconds;
-- process peak RSS: about 353 MB (includes loading the full merged parquet);
-- per-model peak Python memory from `tracemalloc`: about 0.07-0.16 MB;
-- fit/predict time per model: below 4 ms.
+- wall time: about 35-45 seconds, dominated by LSTM training;
+- LSTM fit time: approximately 2-10 seconds per series;
+- Holt-Winters fit time: approximately 0.5-0.8 seconds per series;
+- baseline models: below 4 ms per series;
+- per-model `tracemalloc` peak: baselines below 0.2 MB, Holt-Winters below
+  0.6 MB, LSTM up to about 83 MB for the global series.
 
 ## Decisions and limitations
 
@@ -83,5 +104,9 @@ On the merged parquet (single local run, 6 series × 4 models):
 - A flat moving-average forecast is a transparent baseline; no recursive updates.
 - Linear regression is sensitive to trend and performs poorly on declining or
   flat epidemic tails, which is visible in the MAE table.
+- LSTM is trained from scratch on each series and is intentionally a trainable
+  comparison model, not a tuned production model.
+- Holt-Winters is the library-provided "ready-made" approach; it is fitted
+  automatically by `statsmodels`.
 - The dashboard reads forecast CSVs only if they exist, so it still runs before
-  forecasts are generated.
+  forecasts are generated. Future rows are rendered in a separate chart.

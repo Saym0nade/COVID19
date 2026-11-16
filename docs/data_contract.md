@@ -196,7 +196,8 @@ Catalog sample использует нормализованные имена `i
 | `outputs/timeseries.csv` | Resample и скользящие средние | B |
 | `outputs/waves.csv` | Волны: страна, начало, конец, пик | B |
 | `outputs/forecast_metrics.csv` | MAE, время, память по моделям | C |
-| `outputs/forecast_predictions.csv` | Факт и прогноз на тестовом периоде | C |
+| `outputs/forecast_predictions.csv` | Факт и прогноз: `split=test` на holdout и `split=future` после конца данных | C |
+| `outputs/forecast_future.csv` | Только будущие прогнозы после последней даты датасета | C |
 | `data/processed/covid_merged.parquet` | Объединённые данные каталога и legacy | A |
 | `data/processed/covid_clean.parquet` | Очищенные данные | A |
 | `data/covid.db` | SQLite | A |
@@ -209,7 +210,7 @@ Catalog sample использует нормализованные имена `i
 | `src/db.py` | `get_connection`, `init_db`, `load_dataframe`, `run_query` | A |
 | `src/analytics.py` | `add_derived_fields`, `descriptive_stats`, `missing_report`, `detect_outliers_iqr`, `correlation_matrix` | B |
 | `src/timeseries.py` | `resample_series`, `rolling_average`, `seasonal_decompose`, `detect_waves` | B |
-| `src/forecasting.py` | `naive_forecast`, `seasonal_naive_forecast`, `moving_average_forecast`, `linear_regression_forecast`, `evaluate_mae`, `benchmark` | C |
+| `src/forecasting.py` | `naive_forecast`, `seasonal_naive_forecast`, `moving_average_forecast`, `linear_regression_forecast`, `HoltWintersForecastModel`, `LSTMForecastModel`, `future_forecast`, `evaluate_mae`, `benchmark` | C |
 | `src/visuals.py` | `line_chart`, `heatmap`, `boxplot` | B, C |
 | `src/app.py` | `load_dashboard_data`, `build_app`, `main` | C |
 | `src/main.py` | `show_status`, `main` | A |
@@ -222,6 +223,8 @@ Catalog sample использует нормализованные имена `i
 | Baseline 2 | Seasonal naive, лаг 7 дней |
 | Подход 1 | Moving average, окно 7/14/28 |
 | Подход 2 | Linear Regression |
+| Готовая модель из библиотеки | Holt-Winters / Exponential Smoothing (`statsmodels`) |
+| Обучаемая модель | PyTorch LSTM на скользящих окнах |
 
 Обязательные метрики:
 
@@ -229,7 +232,7 @@ Catalog sample использует нормализованные имена `i
 - время выполнения;
 - потребление памяти.
 
-Дополнительно: RMSE, график «факт vs прогноз».
+Дополнительно: RMSE, график «факт vs прогноз» на holdout и отдельный график future-прогноза на 30 дней после последней доступной даты каждой серии. Для `global`, `country:CHN` и `country:IND` future-окно начинается после конца датасета (2026-10-18). Future-строки имеют `split=future` и пустой `actual`.
 
 ## 10. Контракт дашборда
 

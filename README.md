@@ -97,14 +97,17 @@ python -m src.app                      # интерактивный дашбор
 |---|---|
 | `data/processed/covid_merged.parquet` | Объединённые данные каталога и legacy |
 | `data/covid.db` | SQLite-база с таблицами `countries`, `covid_metrics`, `vaccinations`, `excess_mortality`, `waves` |
-| `outputs/forecast_metrics.csv` | MAE, RMSE, время и память по моделям для `global` и `country:<ISO>` |
-| `outputs/forecast_predictions.csv` | Факт и прогноз на тестовом окне по всем сериям и моделям |
+| `outputs/forecast_metrics.csv` | MAE, RMSE, время и память по 6 моделям для `global` и `country:<ISO>` |
+| `outputs/forecast_predictions.csv` | Факт и прогноз на тестовом окне (`split=test`) и после конца датасета (`split=future`) |
+| `outputs/forecast_future.csv` | Только будущие прогнозы после последней даты датасета |
 | `outputs/waves.csv` | Найденные волны (если создан анализом) |
 | `outputs/sql/*.csv` | Результаты SQL-запросов (если созданы `run_sql.py`) |
 | `outputs/eda_summary.json`, `outputs/outliers.csv`, `outputs/correlation.csv`, `outputs/timeseries.csv` | Результаты EDA и анализа временных рядов |
 | `figures/*.png` | Статические графики анализа |
 
 Дашборд содержит вкладки **Overview**, **Waves**, **Vaccination vs Mortality**, **Forecast** и **Data/SQL**. Фильтры `year`, `region`, `category` применяются к обзорным графикам, scatter-графику вакцинации и предпросмотру данных. Необязательные файлы (`waves.csv`, `forecast_*.csv`, `outputs/sql/*.csv`) подхватываются автоматически, а при их отсутствии соответствующая вкладка показывает подсказку вместо ошибки.
+
+Сравнение прогнозов включает 6 моделей: naive, seasonal naive, moving average, Linear Regression, библиотечный Holt-Winters/ETS и обучаемый PyTorch LSTM. Отдельный график показывает прогноз на 30 дней после последней доступной даты каждой серии; для `global`, `country:CHN` и `country:IND` это даты после конца датасета (2026-10-18), а страны с более ранним окончанием данных имеют более раннее окно future-прогноза. Для CPU-only установки PyTorch можно использовать `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
 
 Если зависимости ещё не установлены, sample и манифест можно пересобрать отдельно:
 

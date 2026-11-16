@@ -16,11 +16,19 @@ from src.config import (
     OUTPUTS_DIR,
 )
 from src.forecasting import (
+    DEFAULT_FUTURE_HORIZON,
     DEFAULT_HORIZON,
+    DEFAULT_LSTM_EPOCHS,
+    DEFAULT_LSTM_HIDDEN,
+    DEFAULT_LSTM_LOOKBACK,
+    DEFAULT_SEED,
     DEFAULT_TEST_DAYS,
     DEFAULT_TOP_N,
+    HoltWintersForecastModel,
+    LSTMForecastModel,
     benchmark,
     build_forecast_series,
+    future_forecast,
     linear_regression_forecast,
     make_model,
     moving_average_forecast,
@@ -90,6 +98,13 @@ def _make_models(args: argparse.Namespace) -> dict[str, object]:
         ),
         "moving_average": make_model(moving_average_forecast, window=args.window),
         "linear_regression": make_model(linear_regression_forecast),
+        "holt_winters": HoltWintersForecastModel(season_length=args.season_length),
+        "lstm": LSTMForecastModel(
+            lookback=args.lstm_lookback,
+            hidden_size=args.lstm_hidden,
+            epochs=args.lstm_epochs,
+            seed=args.seed,
+        ),
     }
 
 
@@ -146,6 +161,23 @@ def forecast_series(
                 }
             )
 
+    future_horizon = int(args.future_horizon)
+    future_predictions = future_forecast(_make_models(args), series, future_horizon)
+    future_reference = next(iter(future_predictions.values()))
+    for model_name, forecast in future_predictions.items():
+        future_series = pd.Series(forecast).dropna()
+        for date, value in future_series.items():
+            rows.append(
+                {
+                    "series": name,
+                    "date": _iso_date(date),
+                    "actual": None,
+                    "predicted": float(value),
+                    "model": model_name,
+                    "split": "future",
+                }
+            )
+
     info = {
         "name": name,
         "observations": len(series),
@@ -154,6 +186,9 @@ def forecast_series(
         "test_start": _iso_date(test_start),
         "test_end": _iso_date(test_end),
         "horizon": horizon,
+        "future_start": _iso_date(future_reference.index.min()),
+        "future_end": _iso_date(future_reference.index.max()),
+        "future_horizon": future_horizon,
     }
     return metrics, pd.DataFrame(rows, columns=PREDICTION_COLUMNS), info
 
@@ -161,15 +196,18 @@ def forecast_series(
 def write_outputs(
     metrics: pd.DataFrame,
     prediction_frame: pd.DataFrame,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     metrics_path = OUTPUTS_DIR / "forecast_metrics.csv"
     predictions_path = OUTPUTS_DIR / "forecast_predictions.csv"
+    future_path = OUTPUTS_DIR / "forecast_future.csv"
     metrics.to_csv(metrics_path, index=False, columns=METRIC_COLUMNS)
     prediction_frame.to_csv(
         predictions_path, index=False, columns=PREDICTION_COLUMNS
     )
-    return metrics_path, predictions_path
+    future_frame = prediction_frame[prediction_frame["split"] == "future"]
+    future_frame.to_csv(future_path, index=False, columns=PREDICTION_COLUMNS)
+    return metrics_path, predictions_path, future_path
 
 
 def run(args: argparse.Namespace) -> None:
@@ -189,7 +227,7 @@ def run(args: argparse.Namespace) -> None:
 
     metrics = pd.concat(metrics_frames, ignore_index=True)
     prediction_frame = pd.concat(prediction_frames, ignore_index=True)
-    metrics_path, predictions_path = write_outputs(metrics, prediction_frame)
+    metrics_path, predictions_path, future_path = write_outputs(metrics, prediction_frame)
 
     print(f"source: {source}")
     if not top_countries.empty:
@@ -205,7 +243,8 @@ def run(args: argparse.Namespace) -> None:
             f"{info['name']}: observations={info['observations']} | "
             f"train={info['train_start']}..{info['train_end']} | "
             f"test={info['test_start']}..{info['test_end']} | "
-            f"horizon={info['horizon']}"
+            f"horizon={info['horizon']} | "
+            f"future={info['future_start']}..{info['future_end']}"
         )
 
     summary = metrics[
@@ -225,6 +264,7 @@ def run(args: argparse.Namespace) -> None:
     )
     print(f"wrote: {metrics_path}")
     print(f"wrote: {predictions_path}")
+    print(f"wrote: {future_path}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -233,9 +273,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--test-days", type=int, default=DEFAULT_TEST_DAYS)
     parser.add_argument("--horizon", type=int, default=DEFAULT_HORIZON)
+    parser.add_argument("--future-horizon", type=int, default=DEFAULT_FUTURE_HORIZON)
     parser.add_argument("--season-length", type=int, default=7)
     parser.add_argument("--window", type=int, default=7)
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
+    parser.add_argument("--lstm-lookback", type=int, default=DEFAULT_LSTM_LOOKBACK)
+    parser.add_argument("--lstm-hidden", type=int, default=DEFAULT_LSTM_HIDDEN)
+    parser.add_argument("--lstm-epochs", type=int, default=DEFAULT_LSTM_EPOCHS)
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     return parser.parse_args()
 
 

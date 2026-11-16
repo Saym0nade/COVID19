@@ -2,16 +2,25 @@ from __future__ import annotations
 
 import time
 import tracemalloc
+import warnings
 from collections.abc import Callable, Mapping
 
 import numpy as np
 import pandas as pd
+import torch
 from scipy import stats
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from torch import nn
 
 
 DEFAULT_TEST_DAYS = 90
 DEFAULT_HORIZON = 30
+DEFAULT_FUTURE_HORIZON = 30
 DEFAULT_TOP_N = 5
+DEFAULT_SEED = 42
+DEFAULT_LSTM_LOOKBACK = 30
+DEFAULT_LSTM_HIDDEN = 32
+DEFAULT_LSTM_EPOCHS = 40
 AGGREGATE_PREFIX = "OWID_"
 
 
@@ -304,6 +313,180 @@ class ForecastModel:
 def make_model(function: Callable[..., pd.Series], **kwargs: object) -> ForecastModel:
     """Wrap a forecast function for use with :func:`benchmark`."""
     return ForecastModel(function, **kwargs)
+
+
+class HoltWintersForecastModel:
+    """Library-provided Exponential Smoothing / Holt-Winters model."""
+
+    def __init__(
+        self,
+        season_length: int = 7,
+        trend: str = "add",
+        seasonal: str = "add",
+        damped_trend: bool = True,
+    ) -> None:
+        self.season_length = season_length
+        self.trend = trend
+        self.seasonal = seasonal
+        self.damped_trend = damped_trend
+        self._series: pd.Series | None = None
+        self._model = None
+
+    def fit(self, train: pd.Series) -> "HoltWintersForecastModel":
+        cleaned = _clean_series(train).dropna().sort_index()
+        self._series = cleaned
+        self._model = None
+        if len(cleaned) < max(4, self.season_length + 2):
+            return self
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model = ExponentialSmoothing(
+                    cleaned,
+                    trend=self.trend,
+                    damped_trend=self.damped_trend,
+                    seasonal=self.seasonal if len(cleaned) >= 2 * self.season_length else None,
+                    seasonal_periods=self.season_length if len(cleaned) >= 2 * self.season_length else None,
+                    initialization_method="estimated",
+                )
+                self._model = model.fit(optimized=True)
+        except (ValueError, TypeError, np.linalg.LinAlgError):
+            self._model = None
+        return self
+
+    def predict(self, horizon: int) -> pd.Series:
+        if self._series is None:
+            raise ValueError("call fit() before predict()")
+        if self._model is not None:
+            values = np.asarray(self._model.forecast(horizon), dtype=float)
+        else:
+            values = np.full(horizon, float(self._series.iloc[-1]), dtype=float)
+        upper = max(float(self._series.max()) * 2.0, 1.0)
+        values = np.clip(values, 0.0, upper)
+        return pd.Series(values, index=_future_index(self._series, horizon))
+
+
+class _LSTMNetwork(nn.Module):
+    def __init__(self, hidden_size: int) -> None:
+        super().__init__()
+        self.lstm = nn.LSTM(input_size=1, hidden_size=hidden_size, num_layers=1, batch_first=True)
+        self.linear = nn.Linear(hidden_size, 1)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        outputs, _ = self.lstm(inputs)
+        return self.linear(outputs[:, -1, :]).squeeze(-1)
+
+
+class LSTMForecastModel:
+    """Small PyTorch LSTM trained on sliding windows of the target series."""
+
+    def __init__(
+        self,
+        lookback: int = DEFAULT_LSTM_LOOKBACK,
+        hidden_size: int = DEFAULT_LSTM_HIDDEN,
+        epochs: int = DEFAULT_LSTM_EPOCHS,
+        learning_rate: float = 0.01,
+        batch_size: int = 32,
+        seed: int = DEFAULT_SEED,
+    ) -> None:
+        self.lookback = lookback
+        self.hidden_size = hidden_size
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.seed = seed
+        self._series: pd.Series | None = None
+        self._model: _LSTMNetwork | None = None
+        self._minimum = 0.0
+        self._span = 1.0
+        self._scaled: np.ndarray | None = None
+
+    def fit(self, train: pd.Series) -> "LSTMForecastModel":
+        cleaned = _clean_series(train).dropna().sort_index()
+        self._series = cleaned
+        self._model = None
+        values = cleaned.to_numpy(dtype=float)
+        if len(values) <= self.lookback + 1:
+            return self
+        values = values[-min(len(values), 1095) :]
+        transformed = np.log1p(np.clip(values, 0.0, None))
+        self._minimum = float(np.min(transformed))
+        maximum = float(np.max(transformed))
+        self._span = maximum - self._minimum
+        if self._span <= 1e-9:
+            return self
+        scaled = (transformed - self._minimum) / self._span
+        self._scaled = scaled
+        windows = np.lib.stride_tricks.sliding_window_view(scaled, self.lookback + 1)
+        features = windows[:, :-1]
+        targets = windows[:, -1]
+        features_tensor = torch.tensor(features, dtype=torch.float32).unsqueeze(-1)
+        targets_tensor = torch.tensor(targets, dtype=torch.float32)
+
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        torch.set_num_threads(1)
+        model = _LSTMNetwork(self.hidden_size)
+        optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+        loss_function = nn.MSELoss()
+        model.train()
+        for _ in range(max(1, self.epochs)):
+            permutation = torch.randperm(len(features_tensor))
+            for start in range(0, len(features_tensor), self.batch_size):
+                indices = permutation[start : start + self.batch_size]
+                optimizer.zero_grad()
+                predictions = model(features_tensor[indices])
+                loss = loss_function(predictions, targets_tensor[indices])
+                loss.backward()
+                optimizer.step()
+        model.eval()
+        self._model = model
+        return self
+
+    def predict(self, horizon: int) -> pd.Series:
+        if self._series is None:
+            raise ValueError("call fit() before predict()")
+        if self._model is None or self._scaled is None:
+            return naive_forecast(self._series, horizon)
+        window = self._scaled[-self.lookback :].reshape(1, self.lookback, 1)
+        predictions: list[float] = []
+        with torch.no_grad():
+            for _ in range(horizon):
+                inputs = torch.tensor(window, dtype=torch.float32)
+                value = float(self._model(inputs).item())
+                value = float(np.clip(value, 0.0, 1.0))
+                predictions.append(value)
+                window = np.concatenate(
+                    [window[:, 1:, :], np.array([[[value]]], dtype=float)],
+                    axis=1,
+                )
+        transformed = np.asarray(predictions, dtype=float) * self._span + self._minimum
+        values = np.expm1(transformed)
+        upper = max(float(self._series.max()) * 2.0, 1.0)
+        values = np.clip(values, 0.0, upper)
+        return pd.Series(values, index=_future_index(self._series, horizon))
+
+
+def future_forecast(
+    models: Mapping[str, object],
+    series: pd.Series,
+    horizon: int,
+) -> dict[str, pd.Series]:
+    """Fit each model on the full series and forecast beyond its last date."""
+    cleaned = _clean_series(series).dropna().sort_index()
+    if cleaned.empty:
+        raise ValueError("cannot forecast an empty series")
+    forecasts: dict[str, pd.Series] = {}
+    for name, model in models.items():
+        if hasattr(model, "fit") and hasattr(model, "predict"):
+            fitted = model.fit(cleaned)
+            forecast = fitted.predict(horizon)
+        elif callable(model):
+            forecast = model(cleaned, horizon)
+        else:
+            raise TypeError(f"unsupported model object for {name!r}")
+        forecasts[name] = pd.Series(forecast).astype(float)
+    return forecasts
 
 
 def benchmark(
