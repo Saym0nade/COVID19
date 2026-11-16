@@ -9,8 +9,18 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.config import DB_PATH, MERGED_DATA_PATH, SCHEMA_PATH
+from src.config import DB_PATH, MERGED_DATA_PATH, OUTPUTS_DIR, SCHEMA_PATH
 from src.db import get_connection, init_db, load_dataframe
+
+WAVES_PATH = OUTPUTS_DIR / "waves.csv"
+WAVE_COLUMNS = [
+    "iso_code",
+    "wave_number",
+    "start_date",
+    "end_date",
+    "peak_date",
+    "peak_value",
+]
 
 METRIC_COLUMNS = [
     "new_cases",
@@ -119,6 +129,26 @@ def build_excess_mortality(frame: pd.DataFrame, valid_codes: set[str]) -> pd.Dat
     return excess
 
 
+def build_waves(valid_codes: set[str]) -> pd.DataFrame:
+    if not WAVES_PATH.exists():
+        return pd.DataFrame(columns=WAVE_COLUMNS)
+    waves = pd.read_csv(WAVES_PATH)
+    available = [column for column in WAVE_COLUMNS if column in waves.columns]
+    waves = waves[available].copy()
+    if "iso_code" not in waves.columns:
+        return pd.DataFrame(columns=WAVE_COLUMNS)
+    waves["iso_code"] = waves["iso_code"].astype(str).str.strip()
+    waves = waves[waves["iso_code"].isin(valid_codes)]
+    for column in ("start_date", "end_date", "peak_date"):
+        if column in waves.columns:
+            waves[column] = pd.to_datetime(waves[column], errors="coerce").dt.strftime("%Y-%m-%d")
+    if "wave_number" in waves.columns:
+        waves["wave_number"] = pd.to_numeric(waves["wave_number"], errors="coerce").astype("Int64")
+    if "peak_value" in waves.columns:
+        waves["peak_value"] = pd.to_numeric(waves["peak_value"], errors="coerce")
+    return waves.dropna(subset=["iso_code", "wave_number", "start_date", "end_date"])
+
+
 def main() -> None:
     try:
         frame = _load_merged()
@@ -141,11 +171,14 @@ def main() -> None:
         covid_metrics = build_covid_metrics(frame, valid_codes)
         vaccinations = build_vaccinations(frame, valid_codes)
         excess_mortality = build_excess_mortality(frame, valid_codes)
+        waves = build_waves(valid_codes)
 
         load_dataframe(countries, "countries", connection, if_exists="append")
         load_dataframe(covid_metrics, "covid_metrics", connection, if_exists="append")
         load_dataframe(vaccinations, "vaccinations", connection, if_exists="append")
         load_dataframe(excess_mortality, "excess_mortality", connection, if_exists="append")
+        if not waves.empty:
+            load_dataframe(waves, "waves", connection, if_exists="append")
         connection.commit()
     except (KeyError, ValueError, sqlite3.Error) as exc:
         connection.close()

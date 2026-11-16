@@ -78,9 +78,9 @@ pip install -r requirements.txt
 python scripts/download_data.py        # каталог OWID + legacy fallback
 python scripts/prepare_data.py         # sample и manifest
 python scripts/build_merged_dataset.py # covid_merged.parquet
-python scripts/build_sqlite.py         # data/covid.db
-python scripts/run_sql.py              # outputs/sql/*.csv
 python scripts/run_analysis.py         # EDA, волны и графики
+python scripts/build_sqlite.py         # data/covid.db (включая waves.csv, если есть)
+python scripts/run_sql.py              # outputs/sql/*.csv
 python scripts/run_forecast.py         # прогноз: global + top-5 стран
 python -m src.app                      # интерактивный дашборд
 ```
