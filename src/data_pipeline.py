@@ -7,6 +7,7 @@ import pandas as pd
 from .config import (
     CATALOG_COMPACT_PATH,
     CATALOG_RENAME,
+    CORE_COLUMNS,
     COUNTRY_CODE_COLUMN,
     DATE_COLUMN,
     LOCATION_COLUMN,
@@ -153,7 +154,48 @@ def save_merged_parquet(frame: pd.DataFrame, path: Path = MERGED_DATA_PATH) -> P
     return save_parquet(frame, path)
 
 
+def build_data_profile(
+    frame: pd.DataFrame,
+    key_columns: list[str] | None = None,
+) -> dict:
+    """Build a JSON-serialisable profile of a merged dataset."""
+    if key_columns is None:
+        key_columns = [column for column in CORE_COLUMNS if column in frame.columns]
+    date_min = date_max = None
+    if DATE_COLUMN in frame.columns:
+        dates = pd.to_datetime(frame[DATE_COLUMN], errors="coerce")
+        if dates.notna().any():
+            date_min = dates.min().date().isoformat()
+            date_max = dates.max().date().isoformat()
+    missing = {
+        column: int(frame[column].isna().sum())
+        for column in key_columns
+        if column in frame.columns
+    }
+    return {
+        "rows": int(len(frame)),
+        "columns": int(frame.shape[1]),
+        "date_min": date_min,
+        "date_max": date_max,
+        "memory_mb": round(float(frame.memory_usage(deep=True).sum()) / 1_048_576, 2),
+        "missing": missing,
+    }
+
+
+def save_data_profile(profile: dict, path: Path) -> Path:
+    import json
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
 def chunked_summary(path: Path = RAW_DATA_PATH, chunk_size: int = 100_000) -> dict:
     chunks = load_raw(path, chunksize=chunk_size)
     sizes = [len(chunk) for chunk in chunks]
-    return {"chunks": len(sizes), "rows": sum(sizes), "chunk_size": chunk_size}
+    return {
+        "chunks": len(sizes),
+        "rows": sum(sizes),
+        "chunk_size": chunk_size,
+        "max_chunk_rows": max(sizes) if sizes else 0,
+    }
