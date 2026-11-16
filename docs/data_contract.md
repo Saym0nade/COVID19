@@ -197,7 +197,9 @@ Catalog sample использует нормализованные имена `i
 | `outputs/waves.csv` | Волны: страна, начало, конец, пик | B |
 | `outputs/forecast_metrics.csv` | MAE, время, память по моделям | C |
 | `outputs/forecast_predictions.csv` | Факт и прогноз: `split=test` на holdout и `split=future` после конца данных | C |
-| `outputs/forecast_future.csv` | Только будущие прогнозы после последней даты датасета | C |
+| `outputs/forecast_future.csv` | Только будущие прогнозы после последней даты датасета до 2027-01-01 | C |
+| `outputs/forecast_recent_metrics.csv` | MAE/RMSE на недавнем holdout (последние 90 дней) | C |
+| `outputs/forecast_recent_predictions.csv` | Предсказания на недавнем holdout | C |
 | `data/processed/covid_merged.parquet` | Объединённые данные каталога и legacy | A |
 | `data/processed/covid_clean.parquet` | Очищенные данные | A |
 | `data/covid.db` | SQLite | A |
@@ -232,7 +234,7 @@ Catalog sample использует нормализованные имена `i
 - время выполнения;
 - потребление памяти.
 
-Дополнительно: RMSE, график «факт vs прогноз» на полном периоде после отреза **2023-12-31** до конца датасета (2026-10-18) и отдельный график future-прогноза на 30 дней после конца датасета. Top-5 стран выбираются среди стран с достаточным ненулевым target после 2023 года. Future-строки имеют `split=future` и пустой `actual`.
+Дополнительно: RMSE, график «факт vs прогноз» на полном периоде после отреза **2023-12-31** до конца датасета (2026-10-18), сравнение моделей на недавнем holdout (последние 90 дней) и future-прогноз лучшей recent-модели **до 2027-01-01**. Top-5 стран выбираются среди стран с достаточным ненулевым target после 2023 года. Future-строки имеют `split=future` и пустой `actual`; recent-строки — `split=recent`.
 
 ## 10. Контракт дашборда
 

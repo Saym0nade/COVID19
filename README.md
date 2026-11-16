@@ -99,7 +99,9 @@ python -m src.app                      # интерактивный дашбор
 | `data/covid.db` | SQLite-база с таблицами `countries`, `covid_metrics`, `vaccinations`, `excess_mortality`, `waves` |
 | `outputs/forecast_metrics.csv` | MAE, RMSE, время и память по 6 моделям для `global` и `country:<ISO>` |
 | `outputs/forecast_predictions.csv` | Факт и прогноз на тестовом окне (`split=test`) и после конца датасета (`split=future`) |
-| `outputs/forecast_future.csv` | Только будущие прогнозы после последней даты датасета |
+| `outputs/forecast_future.csv` | Только будущие прогнозы после последней даты датасета до 2027-01-01 |
+| `outputs/forecast_recent_metrics.csv` | MAE/RMSE на недавнем holdout (последние 90 дней) |
+| `outputs/forecast_recent_predictions.csv` | Предсказания моделей на недавнем holdout |
 | `outputs/waves.csv` | Найденные волны (если создан анализом) |
 | `outputs/sql/*.csv` | Результаты SQL-запросов (если созданы `run_sql.py`) |
 | `outputs/eda_summary.json`, `outputs/outliers.csv`, `outputs/correlation.csv`, `outputs/timeseries.csv` | Результаты EDA и анализа временных рядов |
@@ -107,7 +109,7 @@ python -m src.app                      # интерактивный дашбор
 
 Дашборд содержит вкладки **Overview**, **Waves**, **Vaccination vs Mortality**, **Forecast** и **Data/SQL**. Фильтры `year`, `region`, `category` применяются к обзорным графикам, scatter-графику вакцинации и предпросмотру данных. Необязательные файлы (`waves.csv`, `forecast_*.csv`, `outputs/sql/*.csv`) подхватываются автоматически, а при их отсутствии соответствующая вкладка показывает подсказку вместо ошибки.
 
-Сравнение прогнозов включает 6 моделей: naive, seasonal naive, moving average, Linear Regression, библиотечный Holt-Winters/ETS и обучаемый PyTorch LSTM. Обучение заканчивается **2023-12-31**, а оценка и прогноз строятся на полном ряду с **2024-01-01 до конца датасета** (2026-10-18); после этого добавляется future-прогноз на 30 дней. Top-5 стран выбираются среди стран с достаточным ненулевым target после 2023 года. Для графиков выбирается видимая модель с ненулевым прогнозом, а серии без видимого прогноза не отображаются, чтобы панели не были пустыми. Для CPU-only установки PyTorch можно использовать `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+Сравнение прогнозов включает 6 моделей: naive, seasonal naive, moving average, Linear Regression, библиотечный Holt-Winters/ETS и обучаемый PyTorch LSTM. Обучение заканчивается **2023-12-31**, оценка строится на полном ряду с **2024-01-01 до конца датасета** (2026-10-18), затем модели сравниваются с недавними реальными данными (последние 90 дней), и лучшая recent-модель строит future-прогноз **до 2027-01-01**. Top-5 стран выбираются среди стран с достаточным ненулевым target после 2023 года. Для графиков выбирается видимая модель с ненулевым прогнозом, а серии без видимого прогноза не отображаются, чтобы панели не были пустыми. Для CPU-only установки PyTorch можно использовать `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
 
 Если зависимости ещё не установлены, sample и манифест можно пересобрать отдельно:
 

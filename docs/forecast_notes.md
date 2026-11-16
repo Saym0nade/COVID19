@@ -31,12 +31,12 @@ Current merged-parquet run:
 
 | Series | Train end | Evaluation period | Future period |
 |---|---|---|---|
-| `global` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
-| `country:CHN` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
-| `country:IND` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
-| `country:BRA` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
-| `country:ITA` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
-| `country:GBR` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
+| `global` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2027-01-01 |
+| `country:CHN` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2027-01-01 |
+| `country:IND` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2027-01-01 |
+| `country:BRA` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2027-01-01 |
+| `country:ITA` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2027-01-01 |
+| `country:GBR` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2027-01-01 |
 
 ## Split and horizon
 
@@ -46,13 +46,21 @@ Current merged-parquet run:
 - `--cutoff-date` controls the cutoff; default `2023-12-31`.
 - `--test-days` is a legacy alternative. If explicitly provided, it overrides the
   cutoff and uses the old "last N days as test" behavior.
+- **Recent holdout:** before generating future predictions, all models are
+  compared with the most recent 90 real observations. The best recent model per
+  series is selected for the future chart.
 - **Future forecast:** each model is refitted on the full series and predicts
-  `--future-horizon` days after the dataset end. Default is 30 days.
+  from the dataset end through **2027-01-01** (75 daily observations in the
+  current run). `--future-end-date` controls the end date.
+- `--future-horizon` is a legacy alternative; if provided explicitly, it
+  overrides `--future-end-date`.
 - Future rows are exported with `split="future"` and an empty `actual` value.
+- Recent rows are exported separately with `split="recent"`.
 - Run: `.venv/bin/python scripts/run_forecast.py`
   (optional flags: `--cutoff-date`, `--test-days`, `--horizon`,
-  `--future-horizon`, `--season-length`, `--window`, `--top-n`,
-  `--lstm-lookback`, `--lstm-hidden`, `--lstm-epochs`, `--seed`).
+  `--recent-days`, `--future-end-date`, `--future-horizon`,
+  `--season-length`, `--window`, `--top-n`, `--lstm-lookback`,
+  `--lstm-hidden`, `--lstm-epochs`, `--seed`).
 
 ## Models
 
@@ -83,12 +91,16 @@ Current merged-parquet run:
   `model`, `split`. `split` is `test` for the full post-2023 period and `future`
   for dates after the dataset end.
 - `outputs/forecast_future.csv` — only `split="future"` rows for convenience.
+- `outputs/forecast_recent_metrics.csv` — model comparison on the last 90 real
+  observations.
+- `outputs/forecast_recent_predictions.csv` — recent holdout actual vs predicted
+  rows (`split="recent"`).
 
 ## Measured time and memory
 
 On the merged parquet (single local run, 6 series × 6 models, 1,022-day test):
 
-- wall time: about 30-40 seconds, dominated by LSTM training;
+- wall time: about 45-60 seconds, dominated by LSTM training on the full and recent splits;
 - LSTM fit time: approximately 2-7 seconds per series;
 - Holt-Winters fit time: approximately 0.5-0.6 seconds per series;
 - baseline models: below 4 ms per series;
@@ -113,6 +125,9 @@ On the merged parquet (single local run, 6 series × 6 models, 1,022-day test):
   automatically by `statsmodels`.
 - The dashboard reads forecast CSVs only if they exist, so it still runs before
   forecasts are generated. Future rows are rendered in a separate chart.
+- The future chart uses the recent-holdout comparison to choose the displayed
+  model; it then shows recent actual values followed by predictions through
+  2027-01-01.
 - Forecast plots choose a visible model per series: the lowest-MAE model whose
   predictions are non-zero and, for the future chart, not flat. Series with an
   all-zero target or no visible forecast are omitted from plots but remain in

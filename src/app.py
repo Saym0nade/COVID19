@@ -140,6 +140,43 @@ def load_forecast_predictions(path: Path | None = None) -> pd.DataFrame | None:
     return frame if not frame.empty else None
 
 
+def load_forecast_recent_metrics(path: Path | None = None) -> pd.DataFrame | None:
+    metrics_path = (
+        Path(path)
+        if path is not None
+        else OUTPUTS_DIR / "forecast_recent_metrics.csv"
+    )
+    try:
+        frame = pd.read_csv(metrics_path)
+    except (FileNotFoundError, OSError, ValueError, pd.errors.EmptyDataError):
+        return None
+    if frame.empty or not {"model", "mae"}.issubset(frame.columns):
+        return None
+    if "series" not in frame.columns:
+        frame["series"] = "global"
+    return frame
+
+
+def load_forecast_recent_predictions(path: Path | None = None) -> pd.DataFrame | None:
+    predictions_path = (
+        Path(path)
+        if path is not None
+        else OUTPUTS_DIR / "forecast_recent_predictions.csv"
+    )
+    try:
+        frame = pd.read_csv(predictions_path)
+    except (FileNotFoundError, OSError, ValueError, pd.errors.EmptyDataError):
+        return None
+    required = {"date", "actual", "predicted", "model"}
+    if frame.empty or not required.issubset(frame.columns):
+        return None
+    if "series" not in frame.columns:
+        frame["series"] = "global"
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+    frame = frame.dropna(subset=["date"])
+    return frame if not frame.empty else None
+
+
 def load_waves(path: Path | None = None) -> pd.DataFrame | None:
     """Load optional wave detection output, returning None if unavailable."""
     waves_path = Path(path) if path is not None else OUTPUTS_DIR / "waves.csv"
@@ -353,8 +390,10 @@ def _select_display_model(
 def _forecast_section(
     metrics: pd.DataFrame | None,
     predictions: pd.DataFrame | None,
+    recent_metrics: pd.DataFrame | None = None,
+    recent_predictions: pd.DataFrame | None = None,
 ):
-    if metrics is None and predictions is None:
+    if metrics is None and predictions is None and recent_metrics is None:
         return html.Div(
             "Forecast outputs not found yet. Run: python scripts/run_forecast.py",
             style=MESSAGE_STYLE,
@@ -395,14 +434,18 @@ def _forecast_section(
         )
 
     if predictions is not None:
-        try:
-            if "split" in predictions.columns:
-                test_predictions = predictions[predictions["split"] == "test"].copy()
-                future_predictions = predictions[predictions["split"] == "future"].copy()
-            else:
-                test_predictions = predictions.copy()
-                future_predictions = predictions.iloc[0:0].copy()
+        if "split" in predictions.columns:
+            test_predictions = predictions[predictions["split"] == "test"].copy()
+            future_predictions = predictions[predictions["split"] == "future"].copy()
+        else:
+            test_predictions = predictions.copy()
+            future_predictions = predictions.iloc[0:0].copy()
+    else:
+        test_predictions = pd.DataFrame(columns=["series", "date", "actual", "predicted", "model"])
+        future_predictions = pd.DataFrame(columns=["series", "date", "actual", "predicted", "model"])
 
+    if not test_predictions.empty:
+        try:
             parts: list[pd.DataFrame] = []
             skipped_series: list[str] = []
             for series, group in test_predictions.groupby("series"):
@@ -466,107 +509,206 @@ def _forecast_section(
                 )
             )
 
-        if not future_predictions.empty:
-            try:
-                future_parts: list[pd.DataFrame] = []
-                skipped_future: list[str] = []
-                for series, group in future_predictions.groupby("series"):
-                    recent_actual = test_predictions[
-                        test_predictions["series"] == series
-                    ][["date", "actual"]].drop_duplicates(subset=["date"])
-                    recent_values = pd.to_numeric(
-                        recent_actual["actual"], errors="coerce"
-                    ).dropna()
-                    reference_mean = (
-                        float(recent_values.mean()) if not recent_values.empty else 0.0
-                    )
-                    if reference_mean <= 0:
-                        skipped_future.append(str(series))
-                        continue
-                    model = _select_display_model(
-                        str(series), group, metrics, reference_mean, require_variance=True
-                    )
-                    if model is None:
-                        skipped_future.append(str(series))
-                        continue
-                    actual = recent_actual.rename(columns={"actual": "value"})
-                    actual["variable"] = "Actual (recent)"
-                    actual["series"] = str(series)
-                    predicted = group[group["model"].astype(str) == model].copy()
-                    predicted["variable"] = model
-                    predicted["series"] = str(series)
-                    predicted = predicted.rename(columns={"predicted": "value"})
-                    future_parts.append(
-                        actual[["date", "value", "variable", "series"]]
-                    )
-                    future_parts.append(
-                        predicted[["date", "value", "variable", "series"]]
-                    )
-                future_long = pd.concat(future_parts, ignore_index=True).dropna(
-                    subset=["value"]
+    if recent_metrics is not None and recent_predictions is not None:
+        try:
+            recent_parts: list[pd.DataFrame] = []
+            skipped_recent: list[str] = []
+            for series, group in recent_predictions.groupby("series"):
+                actual = (
+                    group[["date", "actual"]]
+                    .drop_duplicates(subset=["date"])
+                    .rename(columns={"actual": "value"})
                 )
-                if future_long.empty:
-                    raise ValueError("no future prediction values")
-                future_figure = px.line(
-                    future_long,
-                    x="date",
-                    y="value",
-                    color="variable",
-                    facet_col="series",
-                    facet_col_wrap=2,
-                    title="Future forecast after each series ends (visible model per series)",
-                    labels={"value": "Forecasted daily new cases, 7-day smoothed"},
+                actual_values = pd.to_numeric(actual["value"], errors="coerce").dropna()
+                reference_mean = float(actual_values.mean()) if not actual_values.empty else 0.0
+                if reference_mean <= 0:
+                    skipped_recent.append(str(series))
+                    continue
+                model = _select_display_model(
+                    str(series), group, recent_metrics, reference_mean
                 )
-                future_figure.update_yaxes(matches=None, showticklabels=True)
-                future_figure.update_layout(
-                    margin={"l": 20, "r": 20, "t": 60, "b": 20},
-                    legend_title_text="Series",
-                    height=600,
-                )
-                future_start = future_long["date"].min()
-                future_end = future_long["date"].max()
-                children.extend(
-                    [
-                        html.H2("Future forecast"),
-                        html.P(
-                            f"Predictions after the dataset end: "
-                            f"{_format_date(future_start)} — {_format_date(future_end)}. "
-                            "The forecast uses the full post-2023 series for fitting "
-                            "and evaluation, then extends it into the future. Series "
-                            "without a visible forecast are omitted from plots.",
-                            style={"color": "#555"},
-                        ),
-                        dcc.Graph(figure=future_figure),
-                    ]
-                )
-                if skipped_future:
-                    children.append(
-                        html.P(
-                            "Omitted from the future chart because the target is all "
-                            "zero or no model produces a visible future forecast: "
-                            + ", ".join(sorted(skipped_future)),
-                            style={"color": "#666", "fontSize": "12px"},
-                        )
-                    )
-            except (KeyError, ValueError, TypeError):
+                if model is None:
+                    skipped_recent.append(str(series))
+                    continue
+                actual["variable"] = "Actual"
+                actual["series"] = str(series)
+                predicted = group[group["model"].astype(str) == model].copy()
+                predicted["variable"] = model
+                predicted["series"] = str(series)
+                predicted = predicted.rename(columns={"predicted": "value"})
+                recent_parts.append(actual[["date", "value", "variable", "series"]])
+                recent_parts.append(predicted[["date", "value", "variable", "series"]])
+            recent_long = pd.concat(recent_parts, ignore_index=True).dropna(
+                subset=["value"]
+            )
+            if recent_long.empty:
+                raise ValueError("no recent prediction values")
+            recent_figure = px.line(
+                recent_long,
+                x="date",
+                y="value",
+                color="variable",
+                facet_col="series",
+                facet_col_wrap=2,
+                title="Recent holdout: model vs actual (last 90 days)",
+                labels={"value": "Daily new cases, 7-day smoothed"},
+            )
+            recent_figure.update_yaxes(matches=None, showticklabels=True)
+            recent_figure.update_layout(
+                margin={"l": 20, "r": 20, "t": 60, "b": 20},
+                legend_title_text="Series",
+                height=600,
+            )
+            children.extend(
+                [
+                    html.H2("Recent holdout comparison"),
+                    html.P(
+                        "Models are compared with the most recent real observations "
+                        "before the future forecast is generated. The best recent "
+                        "model per series is used for the future chart.",
+                        style={"color": "#555"},
+                    ),
+                    _dataframe_table(
+                        recent_metrics,
+                        columns=[
+                            "series",
+                            "model",
+                            "mae",
+                            "rmse",
+                            "fit_seconds",
+                            "predict_seconds",
+                            "peak_memory_mb",
+                        ],
+                        max_rows=100,
+                    ),
+                    dcc.Graph(figure=recent_figure),
+                ]
+            )
+            if skipped_recent:
                 children.append(
-                    html.Div(
-                        "Future forecasts could not be rendered.",
-                        style=MESSAGE_STYLE,
+                    html.P(
+                        "Omitted from the recent comparison because recent actual "
+                        "values are all zero: " + ", ".join(sorted(skipped_recent)),
+                        style={"color": "#666", "fontSize": "12px"},
                     )
                 )
-        else:
+        except (KeyError, ValueError, TypeError):
             children.append(
                 html.Div(
-                    "Future forecasts are not available yet. "
-                    "Run: python scripts/run_forecast.py",
+                    "Recent holdout comparison could not be rendered.",
                     style=MESSAGE_STYLE,
                 )
             )
     else:
         children.append(
             html.Div(
-                "Forecast predictions are not available yet.",
+                "Recent holdout outputs not found yet. "
+                "Run: python scripts/run_forecast.py",
+                style=MESSAGE_STYLE,
+            )
+        )
+
+    if not future_predictions.empty:
+        try:
+            future_parts: list[pd.DataFrame] = []
+            skipped_future: list[str] = []
+            context_source = (
+                recent_predictions if recent_predictions is not None else test_predictions
+            )
+            selection_metrics = recent_metrics if recent_metrics is not None else metrics
+            for series, group in future_predictions.groupby("series"):
+                context = context_source[
+                    context_source["series"] == series
+                ][["date", "actual"]].drop_duplicates(subset=["date"])
+                context_values = pd.to_numeric(
+                    context["actual"], errors="coerce"
+                ).dropna()
+                context_mean = (
+                    float(context_values.mean()) if not context_values.empty else 0.0
+                )
+                if context_mean <= 0:
+                    skipped_future.append(str(series))
+                    continue
+                reference_mean = max(context_mean, 1.0)
+                model = _select_display_model(
+                    str(series),
+                    group,
+                    selection_metrics,
+                    reference_mean,
+                    require_variance=True,
+                )
+                if model is None:
+                    skipped_future.append(str(series))
+                    continue
+                if not context.empty:
+                    actual = context.rename(columns={"actual": "value"})
+                    actual["variable"] = "Actual (recent)"
+                    actual["series"] = str(series)
+                    future_parts.append(
+                        actual[["date", "value", "variable", "series"]]
+                    )
+                predicted = group[group["model"].astype(str) == model].copy()
+                predicted["variable"] = model
+                predicted["series"] = str(series)
+                predicted = predicted.rename(columns={"predicted": "value"})
+                future_parts.append(
+                    predicted[["date", "value", "variable", "series"]]
+                )
+            future_long = pd.concat(future_parts, ignore_index=True).dropna(
+                subset=["value"]
+            )
+            if future_long.empty:
+                raise ValueError("no future prediction values")
+            future_figure = px.line(
+                future_long,
+                x="date",
+                y="value",
+                color="variable",
+                facet_col="series",
+                facet_col_wrap=2,
+                title="Future forecast to 2027-01-01 (best recent model per series)",
+                labels={"value": "Forecasted daily new cases, 7-day smoothed"},
+            )
+            future_figure.update_yaxes(matches=None, showticklabels=True)
+            future_figure.update_layout(
+                margin={"l": 20, "r": 20, "t": 60, "b": 20},
+                legend_title_text="Series",
+                height=600,
+            )
+            future_start = future_long["date"].min()
+            future_end = future_long["date"].max()
+            children.extend(
+                [
+                    html.H2("Future forecast"),
+                    html.P(
+                        f"Model selected by the recent holdout. Predictions after "
+                        f"the dataset end: {_format_date(future_start)} — "
+                        f"{_format_date(future_end)}.",
+                        style={"color": "#555"},
+                    ),
+                    dcc.Graph(figure=future_figure),
+                ]
+            )
+            if skipped_future:
+                children.append(
+                    html.P(
+                        "Omitted from the future chart because no model produces a "
+                        "visible future forecast: " + ", ".join(sorted(skipped_future)),
+                        style={"color": "#666", "fontSize": "12px"},
+                    )
+                )
+        except (KeyError, ValueError, TypeError):
+            children.append(
+                html.Div(
+                    "Future forecasts could not be rendered.",
+                    style=MESSAGE_STYLE,
+                )
+            )
+    else:
+        children.append(
+            html.Div(
+                "Future forecasts are not available yet. "
+                "Run: python scripts/run_forecast.py",
                 style=MESSAGE_STYLE,
             )
         )
@@ -720,6 +862,8 @@ def build_app(
     frame: pd.DataFrame,
     forecast_metrics: pd.DataFrame | None = None,
     forecast_predictions: pd.DataFrame | None = None,
+    forecast_recent_metrics: pd.DataFrame | None = None,
+    forecast_recent_predictions: pd.DataFrame | None = None,
     waves: pd.DataFrame | None = None,
     sql_queries: list[tuple[str, str]] | None = None,
     sql_outputs: dict[str, pd.DataFrame] | None = None,
@@ -728,6 +872,10 @@ def build_app(
         forecast_metrics = load_forecast_metrics()
     if forecast_predictions is None:
         forecast_predictions = load_forecast_predictions()
+    if forecast_recent_metrics is None:
+        forecast_recent_metrics = load_forecast_recent_metrics()
+    if forecast_recent_predictions is None:
+        forecast_recent_predictions = load_forecast_recent_predictions()
     if waves is None:
         waves = load_waves()
     if sql_queries is None:
@@ -830,7 +978,14 @@ def build_app(
 
     forecast_tab = dcc.Tab(
         label="Forecast",
-        children=[_forecast_section(forecast_metrics, forecast_predictions)],
+        children=[
+            _forecast_section(
+                forecast_metrics,
+                forecast_predictions,
+                forecast_recent_metrics,
+                forecast_recent_predictions,
+            )
+        ],
     )
 
     waves_tab = dcc.Tab(
