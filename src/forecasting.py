@@ -14,6 +14,7 @@ from torch import nn
 
 
 DEFAULT_TEST_DAYS = 90
+DEFAULT_CUTOFF_DATE = "2023-12-31"
 DEFAULT_HORIZON = 30
 DEFAULT_FUTURE_HORIZON = 30
 DEFAULT_TOP_N = 5
@@ -51,15 +52,25 @@ def _future_index(series: pd.Series, horizon: int) -> pd.Index:
 def time_based_split(
     series: pd.Series,
     test_days: int = DEFAULT_TEST_DAYS,
+    cutoff_date: str | pd.Timestamp | None = None,
 ) -> tuple[pd.Series, pd.Series]:
-    """Split a series into past train data and the last ``test_days`` as test."""
-    if test_days <= 0:
-        raise ValueError("test_days must be a positive integer")
-
+    """Split into train and the full period after a cutoff date."""
     cleaned = _clean_series(series).sort_index()
     if cleaned.empty:
         raise ValueError("cannot split an empty series")
 
+    if cutoff_date is not None:
+        if not isinstance(cleaned.index, pd.DatetimeIndex):
+            raise ValueError("cutoff_date requires a DatetimeIndex")
+        cutoff = pd.Timestamp(cutoff_date)
+        train = cleaned[cleaned.index <= cutoff]
+        test = cleaned[cleaned.index > cutoff]
+        if train.empty or test.empty:
+            raise ValueError(f"series has no observations around cutoff {cutoff.date()}")
+        return train, test
+
+    if test_days <= 0:
+        raise ValueError("test_days must be a positive integer")
     if isinstance(cleaned.index, pd.DatetimeIndex):
         cutoff = cleaned.index.max() - pd.Timedelta(days=test_days)
         train = cleaned[cleaned.index <= cutoff]
@@ -98,13 +109,17 @@ def top_countries_by_latest_total(
     frame: pd.DataFrame,
     total_column: str = "total_cases",
     top_n: int = DEFAULT_TOP_N,
+    target_column: str | None = None,
+    min_target_date: str | pd.Timestamp | None = None,
+    min_target_mean: float = 0.0,
+    min_target_observations: int = 30,
 ) -> pd.DataFrame:
-    """Return the top ``top_n`` countries by their latest cumulative total.
+    """Return top countries by latest cumulative total.
 
-    Rows without an ISO code (for example ``Asia excl. China``), OWID
-    aggregates and ``World`` are excluded so the result only contains real
-    countries. Each country is represented by its latest non-null observation,
-    which is robust when the very last date has gaps.
+    If ``target_column`` and ``min_target_date`` are given, only countries with
+    enough non-zero target observations after that date are eligible. This keeps
+    the post-2023 forecast comparison on countries that actually have data in
+    the forecast window.
     """
     if top_n <= 0:
         raise ValueError("top_n must be a positive integer")
@@ -119,6 +134,23 @@ def top_countries_by_latest_total(
     ].sort_values("date")
     if valid.empty:
         raise ValueError(f"no country-level {total_column!r} observations found")
+
+    if target_column and min_target_date and target_column in data.columns:
+        target_values = pd.to_numeric(data[target_column], errors="coerce")
+        recent = data[
+            _country_mask(data)
+            & (data["date"] > pd.Timestamp(min_target_date))
+            & target_values.notna()
+        ].copy()
+        if not recent.empty:
+            recent[target_column] = pd.to_numeric(recent[target_column], errors="coerce")
+            stats = recent.groupby("iso_code")[target_column].agg(["mean", "count"])
+            keep = stats[
+                (stats["mean"] > min_target_mean)
+                & (stats["count"] >= min_target_observations)
+            ].index
+            if len(keep) >= top_n:
+                valid = valid[valid["iso_code"].isin(keep)]
 
     latest = valid.groupby("iso_code", as_index=False, sort=False).tail(1)
     latest = latest.sort_values(
@@ -183,12 +215,18 @@ def build_forecast_series(
     frame: pd.DataFrame,
     target_column: str = "new_cases_smoothed",
     top_n: int = DEFAULT_TOP_N,
+    cutoff_date: str | pd.Timestamp | None = None,
 ) -> tuple[dict[str, pd.Series], pd.DataFrame]:
     """Build the global series plus the top-N country series."""
     series: dict[str, pd.Series] = {
         "global": build_global_series(frame, target_column)
     }
-    top = top_countries_by_latest_total(frame, top_n=top_n)
+    top = top_countries_by_latest_total(
+        frame,
+        top_n=top_n,
+        target_column=target_column,
+        min_target_date=cutoff_date,
+    )
     for iso_code in top["iso_code"]:
         series[f"country:{iso_code}"] = build_country_series(
             frame, str(iso_code), target_column

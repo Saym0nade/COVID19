@@ -365,9 +365,10 @@ def _forecast_section(
         children.extend(
             [
                 html.P(
-                    "MAE / RMSE for the 30-day time-based holdout (lower is better). "
-                    "Models include naive, seasonal naive, moving average, linear "
-                    "regression, library Holt-Winters/ETS and a trained PyTorch LSTM.",
+                    "MAE / RMSE for the full period after the 2023-12-31 cutoff "
+                    "(lower is better). Models include naive, seasonal naive, moving "
+                    "average, linear regression, library Holt-Winters/ETS and a "
+                    "trained PyTorch LSTM.",
                     style={"color": "#555"},
                 ),
                 _dataframe_table(
@@ -438,7 +439,7 @@ def _forecast_section(
                 color="variable",
                 facet_col="series",
                 facet_col_wrap=2,
-                title="Forecast vs actual on the test window (visible model per series)",
+                title="Forecast vs actual after the 2023 cutoff (visible model per series)",
                 labels={"value": "Daily new cases, 7-day smoothed"},
             )
             figure.update_yaxes(matches=None, showticklabels=True)
@@ -528,12 +529,11 @@ def _forecast_section(
                     [
                         html.H2("Future forecast"),
                         html.P(
-                            f"Predictions after each series' last available target date: "
+                            f"Predictions after the dataset end: "
                             f"{_format_date(future_start)} — {_format_date(future_end)}. "
-                            "For global/CHN/IND the future window starts after the "
-                            "dataset end (2026-10-18); countries with earlier reporting "
-                            "end have earlier future windows. Series with all-zero "
-                            "target values are omitted.",
+                            "The forecast uses the full post-2023 series for fitting "
+                            "and evaluation, then extends it into the future. Series "
+                            "without a visible forecast are omitted from plots.",
                             style={"color": "#555"},
                         ),
                         dcc.Graph(figure=future_figure),

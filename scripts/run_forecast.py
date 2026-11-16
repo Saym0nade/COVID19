@@ -16,6 +16,7 @@ from src.config import (
     OUTPUTS_DIR,
 )
 from src.forecasting import (
+    DEFAULT_CUTOFF_DATE,
     DEFAULT_FUTURE_HORIZON,
     DEFAULT_HORIZON,
     DEFAULT_LSTM_EPOCHS,
@@ -114,9 +115,14 @@ def forecast_series(
     args: argparse.Namespace,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, object]]:
     """Forecast one named series and return metrics, prediction rows and info."""
-    train, test = time_based_split(series, test_days=args.test_days)
-    horizon = min(args.horizon, len(test))
-    if horizon < args.horizon:
+    cutoff_date = None if args.test_days is not None else getattr(args, "cutoff_date", None)
+    train, test = time_based_split(
+        series,
+        test_days=args.test_days if args.test_days is not None else DEFAULT_TEST_DAYS,
+        cutoff_date=cutoff_date,
+    )
+    horizon = len(test) if cutoff_date else min(args.horizon, len(test))
+    if not cutoff_date and horizon < args.horizon:
         print(
             f"{name}: requested horizon {args.horizon} exceeds test window; "
             f"using {horizon}."
@@ -185,6 +191,7 @@ def forecast_series(
         "train_end": _iso_date(train.index.max()),
         "test_start": _iso_date(test_start),
         "test_end": _iso_date(test_end),
+        "cutoff_date": _iso_date(cutoff_date),
         "horizon": horizon,
         "future_start": _iso_date(future_reference.index.min()),
         "future_end": _iso_date(future_reference.index.max()),
@@ -212,8 +219,12 @@ def write_outputs(
 
 def run(args: argparse.Namespace) -> None:
     frame, source = load_forecast_frame()
+    selection_cutoff = None if args.test_days is not None else args.cutoff_date
     series_map, top_countries = build_forecast_series(
-        frame, target_column=TARGET_COLUMN, top_n=args.top_n
+        frame,
+        target_column=TARGET_COLUMN,
+        top_n=args.top_n,
+        cutoff_date=selection_cutoff,
     )
 
     metrics_frames: list[pd.DataFrame] = []
@@ -242,6 +253,7 @@ def run(args: argparse.Namespace) -> None:
         print(
             f"{info['name']}: observations={info['observations']} | "
             f"train={info['train_start']}..{info['train_end']} | "
+            f"cutoff={info['cutoff_date']} | "
             f"test={info['test_start']}..{info['test_end']} | "
             f"horizon={info['horizon']} | "
             f"future={info['future_start']}..{info['future_end']}"
@@ -271,7 +283,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Benchmark COVID-19 global and top-country forecasts"
     )
-    parser.add_argument("--test-days", type=int, default=DEFAULT_TEST_DAYS)
+    parser.add_argument(
+        "--cutoff-date",
+        default=DEFAULT_CUTOFF_DATE,
+        help="Train up to this date and evaluate on the full period after it.",
+    )
+    parser.add_argument(
+        "--test-days",
+        type=int,
+        default=None,
+        help="Legacy holdout length; overrides --cutoff-date when provided.",
+    )
     parser.add_argument("--horizon", type=int, default=DEFAULT_HORIZON)
     parser.add_argument("--future-horizon", type=int, default=DEFAULT_FUTURE_HORIZON)
     parser.add_argument("--season-length", type=int, default=7)

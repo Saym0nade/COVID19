@@ -1,7 +1,10 @@
 # Forecast notes (participant C)
 
 Scope: global daily `new_cases_smoothed` plus the top-5 countries by latest
-cumulative `total_cases`, using a time-based split and a 30-day forecast horizon.
+cumulative `total_cases` that have enough non-zero target data after the 2023
+cutoff. Training ends on **2023-12-31**; evaluation covers the full period from
+**2024-01-01** to the dataset end, followed by a future forecast after the
+dataset end.
 
 ## Series selection
 
@@ -10,48 +13,46 @@ cumulative `total_cases`, using a time-based split and a 30-day forecast horizon
   `data/sample/owid-catalog-sample.csv`, then `data/sample/owid-covid-sample.csv`.
 - Series names in outputs:
   - `global` — sum of country-level `new_cases_smoothed` by date;
-  - `country:USA`, `country:CHN`, `country:IND`, `country:FRA`, `country:DEU` —
-    top-5 countries by their latest non-null `total_cases`.
+  - `country:<ISO>` — top-5 countries by latest non-null `total_cases` among
+    countries with at least 30 non-null target observations after 2023-12-31
+    and a positive mean target value.
+- Current merged-parquet run: `country:CHN`, `country:IND`, `country:BRA`,
+  `country:ITA`, `country:GBR`. This replaced the earlier USA/FRA/DEU selection
+  because those countries' `new_cases_smoothed` target data ends before 2023 and
+  cannot be evaluated over the full post-2023 period.
 - Aggregates are excluded everywhere: rows with an `iso_code` starting with
   `OWID_`, the `World` row and rows without an ISO code (for example
   `Asia excl. China`). If no country-level target values exist, the `World` row
   is used as a global fallback.
 - "Latest `total_cases`" is the last non-null cumulative observation per
-  country, not necessarily the dataset's final calendar date. This keeps the
-  ranking stable when the final date has gaps.
-- A country's target series is built from all available non-null
-  `new_cases_smoothed` observations for that ISO code. Some countries have target
-  data that ends earlier than their cumulative totals; the split is applied to
-  the available target series and the resulting dates are exported in metrics.
+  country, not necessarily the dataset's final calendar date.
 
 Current merged-parquet run:
 
-| Series | Latest date in target series | Latest `total_cases` |
-|---|---|---:|
-| `global` | 2026-10-18 | — |
-| `country:USA` | 2023-05-21 | 103,436,829 |
-| `country:CHN` | 2026-10-18 | 99,381,761 |
-| `country:IND` | 2026-10-18 | 45,056,221 |
-| `country:FRA` | 2023-07-02 | 39,064,913 |
-| `country:DEU` | 2023-07-10 | 38,437,953 |
+| Series | Train end | Evaluation period | Future period |
+|---|---|---|---|
+| `global` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
+| `country:CHN` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
+| `country:IND` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
+| `country:BRA` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
+| `country:ITA` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
+| `country:GBR` | 2023-12-31 | 2024-01-01 — 2026-10-18 | 2026-10-19 — 2026-11-17 |
 
 ## Split and horizon
 
-- Time-based split only: train is everything up to `test_days` before the last
-  available date of each series; test is the final `test_days` calendar days.
-- Defaults: `--test-days 90`, `--horizon 30`.
-- Evaluation and prediction exports use the first `min(horizon, len(test))` days
-  after the train cutoff, so the 30-day horizon is comparable across series.
+- Default time split: train is everything up to **2023-12-31**; test is the full
+  period after the cutoff through the dataset end (1,022 daily observations in
+  the current run).
+- `--cutoff-date` controls the cutoff; default `2023-12-31`.
+- `--test-days` is a legacy alternative. If explicitly provided, it overrides the
+  cutoff and uses the old "last N days as test" behavior.
 - **Future forecast:** each model is refitted on the full series and predicts
-  `--future-horizon` days after the last available target date of that series.
-  The default is 30 days. For `global`, `country:CHN` and `country:IND` this is
-  after the dataset end (2026-10-18); USA/FRA/DEU have target data ending
-  earlier, so their future windows start earlier. Future rows are exported with
-  `split="future"` and an empty `actual` value.
+  `--future-horizon` days after the dataset end. Default is 30 days.
+- Future rows are exported with `split="future"` and an empty `actual` value.
 - Run: `.venv/bin/python scripts/run_forecast.py`
-  (optional flags: `--test-days`, `--horizon`, `--future-horizon`,
-  `--season-length`, `--window`, `--top-n`, `--lstm-lookback`,
-  `--lstm-hidden`, `--lstm-epochs`, `--seed`).
+  (optional flags: `--cutoff-date`, `--test-days`, `--horizon`,
+  `--future-horizon`, `--season-length`, `--window`, `--top-n`,
+  `--lstm-lookback`, `--lstm-hidden`, `--lstm-epochs`, `--seed`).
 
 ## Models
 
@@ -76,22 +77,20 @@ Current merged-parquet run:
   Python memory (`tracemalloc`). Peak memory excludes data loading.
 - `outputs/forecast_metrics.csv` — one row per series/model with `series`,
   `model`, `mae`, `rmse`, `fit_seconds`, `predict_seconds`, `peak_memory_mb`,
-  `train_start`, `train_end`, `test_start`, `test_end`.
+  `train_start`, `train_end`, `test_start`, `test_end`. The test period is the
+  full post-2023 period, not a 30-day window.
 - `outputs/forecast_predictions.csv` — `series`, `date`, `actual`, `predicted`,
-  `model`, `split`. `split` is `test` for the holdout and `future` for dates
-  after the dataset ends.
+  `model`, `split`. `split` is `test` for the full post-2023 period and `future`
+  for dates after the dataset end.
 - `outputs/forecast_future.csv` — only `split="future"` rows for convenience.
-- `outputs/forecast_metrics.csv` schema is unchanged: `series`, `model`, `mae`,
-  `rmse`, `fit_seconds`, `predict_seconds`, `peak_memory_mb`, `train_start`,
-  `train_end`, `test_start`, `test_end`.
 
 ## Measured time and memory
 
-On the merged parquet (single local run, 6 series × 6 models):
+On the merged parquet (single local run, 6 series × 6 models, 1,022-day test):
 
-- wall time: about 35-45 seconds, dominated by LSTM training;
-- LSTM fit time: approximately 2-10 seconds per series;
-- Holt-Winters fit time: approximately 0.5-0.8 seconds per series;
+- wall time: about 30-40 seconds, dominated by LSTM training;
+- LSTM fit time: approximately 2-7 seconds per series;
+- Holt-Winters fit time: approximately 0.5-0.6 seconds per series;
 - baseline models: below 4 ms per series;
 - per-model `tracemalloc` peak: baselines below 0.2 MB, Holt-Winters below
   0.6 MB, LSTM up to about 83 MB for the global series.
@@ -99,6 +98,10 @@ On the merged parquet (single local run, 6 series × 6 models):
 ## Decisions and limitations
 
 - The global aggregation uses country rows only to avoid double counting.
+- The post-2023 backtest is a long-horizon evaluation (1,022 days), so errors are
+  much larger than in the previous 30-day holdout. This is intentional.
+- Top-5 countries are filtered to those with post-2023 target data; otherwise a
+  country such as USA/FRA/DEU would have no evaluation period.
 - No imputation is applied to target gaps; series end at their last valid target
   observation.
 - A flat moving-average forecast is a transparent baseline; no recursive updates.
@@ -112,7 +115,7 @@ On the merged parquet (single local run, 6 series × 6 models):
   forecasts are generated. Future rows are rendered in a separate chart.
 - Forecast plots choose a visible model per series: the lowest-MAE model whose
   predictions are non-zero and, for the future chart, not flat. Series with an
-  all-zero target (for example CHN/IND) are omitted from plots so that panels are
-  not empty; they remain in metrics and prediction CSVs.
+  all-zero target or no visible forecast are omitted from plots but remain in
+  metrics and prediction CSVs.
 - Facet y-axes are independent (`matches=None`), so series with very different
   scales remain visible in their own panels.
