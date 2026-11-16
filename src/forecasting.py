@@ -11,6 +11,8 @@ from scipy import stats
 
 DEFAULT_TEST_DAYS = 90
 DEFAULT_HORIZON = 30
+DEFAULT_TOP_N = 5
+AGGREGATE_PREFIX = "OWID_"
 
 
 def _clean_series(series: pd.Series) -> pd.Series:
@@ -62,6 +64,127 @@ def time_based_split(
     if train.empty or test.empty:
         raise ValueError("series is too short for the requested test_days")
     return train, test
+
+
+def _prepare_target_frame(frame: pd.DataFrame, target_column: str) -> pd.DataFrame:
+    if "date" not in frame.columns:
+        raise KeyError("forecast data must contain a 'date' column")
+    if target_column not in frame.columns:
+        raise KeyError(f"forecast data must contain {target_column!r}")
+    data = frame.copy()
+    data["date"] = pd.to_datetime(data["date"], errors="coerce")
+    data[target_column] = pd.to_numeric(data[target_column], errors="coerce")
+    return data
+
+
+def _country_mask(data: pd.DataFrame) -> pd.Series:
+    iso_code = data.get("iso_code", pd.Series("", index=data.index)).astype("string")
+    location = data.get("location", pd.Series("", index=data.index)).astype("string")
+    iso = iso_code.fillna("")
+    name = location.fillna("")
+    return iso.ne("") & ~iso.str.startswith(AGGREGATE_PREFIX) & name.ne("World")
+
+
+def top_countries_by_latest_total(
+    frame: pd.DataFrame,
+    total_column: str = "total_cases",
+    top_n: int = DEFAULT_TOP_N,
+) -> pd.DataFrame:
+    """Return the top ``top_n`` countries by their latest cumulative total.
+
+    Rows without an ISO code (for example ``Asia excl. China``), OWID
+    aggregates and ``World`` are excluded so the result only contains real
+    countries. Each country is represented by its latest non-null observation,
+    which is robust when the very last date has gaps.
+    """
+    if top_n <= 0:
+        raise ValueError("top_n must be a positive integer")
+    if total_column not in frame.columns:
+        raise KeyError(f"forecast data must contain {total_column!r}")
+
+    data = frame.copy()
+    data["date"] = pd.to_datetime(data["date"], errors="coerce")
+    data[total_column] = pd.to_numeric(data[total_column], errors="coerce")
+    valid = data[
+        _country_mask(data) & data["date"].notna() & data[total_column].notna()
+    ].sort_values("date")
+    if valid.empty:
+        raise ValueError(f"no country-level {total_column!r} observations found")
+
+    latest = valid.groupby("iso_code", as_index=False, sort=False).tail(1)
+    latest = latest.sort_values(
+        [total_column, "iso_code"], ascending=[False, True]
+    ).head(top_n)
+    columns = ["iso_code", total_column]
+    if "location" in latest.columns:
+        columns.insert(1, "location")
+    return latest[columns].reset_index(drop=True)
+
+
+def build_global_series(
+    frame: pd.DataFrame,
+    target_column: str = "new_cases_smoothed",
+) -> pd.Series:
+    """Aggregate all country rows by date into a global daily series."""
+    data = _prepare_target_frame(frame, target_column)
+    countries = data[_country_mask(data) & data[target_column].notna()]
+
+    if countries.empty:
+        location = data.get("location", pd.Series("", index=data.index))
+        world = data[(location.astype("string").fillna("") == "World") & data[target_column].notna()]
+        if world.empty:
+            raise ValueError(f"no {target_column!r} observations to aggregate")
+        series = world.groupby("date")[target_column].sum(min_count=1)
+    else:
+        series = countries.groupby("date")[target_column].sum(min_count=1)
+
+    series = series.sort_index().dropna()
+    series.index.name = "date"
+    if series.empty:
+        raise ValueError(f"global {target_column!r} series is empty")
+    return series
+
+
+def build_country_series(
+    frame: pd.DataFrame,
+    iso_code: str,
+    target_column: str = "new_cases_smoothed",
+) -> pd.Series:
+    """Build one country's daily series, summing duplicate rows per date."""
+    data = _prepare_target_frame(frame, target_column)
+    if "iso_code" not in data.columns:
+        raise KeyError("forecast data must contain an 'iso_code' column")
+
+    subset = data[
+        data["iso_code"].astype("string").eq(str(iso_code))
+        & data[target_column].notna()
+    ]
+    if subset.empty:
+        raise ValueError(f"no {target_column!r} observations for {iso_code!r}")
+
+    series = subset.groupby("date")[target_column].sum(min_count=1)
+    series = series.sort_index().dropna()
+    series.index.name = "date"
+    if series.empty:
+        raise ValueError(f"{target_column!r} series for {iso_code!r} is empty")
+    return series
+
+
+def build_forecast_series(
+    frame: pd.DataFrame,
+    target_column: str = "new_cases_smoothed",
+    top_n: int = DEFAULT_TOP_N,
+) -> tuple[dict[str, pd.Series], pd.DataFrame]:
+    """Build the global series plus the top-N country series."""
+    series: dict[str, pd.Series] = {
+        "global": build_global_series(frame, target_column)
+    }
+    top = top_countries_by_latest_total(frame, top_n=top_n)
+    for iso_code in top["iso_code"]:
+        series[f"country:{iso_code}"] = build_country_series(
+            frame, str(iso_code), target_column
+        )
+    return series, top
 
 
 def naive_forecast(series: pd.Series, horizon: int) -> pd.Series:
