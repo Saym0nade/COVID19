@@ -75,16 +75,36 @@ Sample-выборки для параллельной разработки:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python scripts/download_data.py
-python scripts/prepare_data.py
-python scripts/build_merged_dataset.py
-python src/main.py
-python -m src.app
+python scripts/download_data.py        # каталог OWID + legacy fallback
+python scripts/prepare_data.py         # sample и manifest
+python scripts/build_merged_dataset.py # covid_merged.parquet
+python scripts/build_sqlite.py         # data/covid.db
+python scripts/run_sql.py              # outputs/sql/*.csv
+python scripts/run_analysis.py         # EDA, волны и графики
+python scripts/run_forecast.py         # прогноз: global + top-5 стран
+python -m src.app                      # интерактивный дашборд
 ```
 
-`build_merged_dataset.py` создаёт `data/processed/covid_merged.parquet` — объединённый набор из каталога и legacy с fallback.
+`download_data.py` использует актуальный ETL-каталог OWID как основной источник и legacy GitHub-датасеты как fallback. `build_merged_dataset.py` создаёт `data/processed/covid_merged.parquet` — объединённый набор из каталога и legacy с приоритетом каталога.
 
-Дашборд открывается по адресу, который выведет Dash, обычно `http://127.0.0.1:8050`.
+Дашборд открывается по адресу, который выведет Dash, обычно `http://127.0.0.1:8050`. Если объединённый parquet ещё не собран, приложение автоматически использует `data/sample/owid-catalog-sample.csv`, затем legacy sample.
+
+## Ожидаемые результаты
+
+Основные артефакты:
+
+| Путь | Содержимое |
+|---|---|
+| `data/processed/covid_merged.parquet` | Объединённые данные каталога и legacy |
+| `data/covid.db` | SQLite-база с таблицами `countries`, `covid_metrics`, `vaccinations`, `excess_mortality`, `waves` |
+| `outputs/forecast_metrics.csv` | MAE, RMSE, время и память по моделям для `global` и `country:<ISO>` |
+| `outputs/forecast_predictions.csv` | Факт и прогноз на тестовом окне по всем сериям и моделям |
+| `outputs/waves.csv` | Найденные волны (если создан анализом) |
+| `outputs/sql/*.csv` | Результаты SQL-запросов (если созданы `run_sql.py`) |
+| `outputs/eda_summary.json`, `outputs/outliers.csv`, `outputs/correlation.csv`, `outputs/timeseries.csv` | Результаты EDA и анализа временных рядов |
+| `figures/*.png` | Статические графики анализа |
+
+Дашборд содержит вкладки **Overview**, **Waves**, **Vaccination vs Mortality**, **Forecast** и **Data/SQL**. Фильтры `year`, `region`, `category` применяются к обзорным графикам, scatter-графику вакцинации и предпросмотру данных. Необязательные файлы (`waves.csv`, `forecast_*.csv`, `outputs/sql/*.csv`) подхватываются автоматически, а при их отсутствии соответствующая вкладка показывает подсказку вместо ошибки.
 
 Если зависимости ещё не установлены, sample и манифест можно пересобрать отдельно:
 
@@ -123,10 +143,18 @@ python3 scripts/prepare_data.py
 ├── scripts/
 │   ├── download_data.py
 │   ├── prepare_data.py
-│   └── build_merged_dataset.py
+│   ├── build_merged_dataset.py
+│   ├── build_sqlite.py
+│   ├── run_sql.py
+│   ├── run_analysis.py
+│   └── run_forecast.py
 ├── docs/
 │   ├── data_contract.md
-│   └── phase0_report.md
+│   ├── phase0_report.md
+│   ├── analysis_notes.md
+│   ├── forecast_notes.md
+│   ├── sql_notes.md
+│   └── er_diagram.md
 ├── figures/
 ├── report/
 │   └── report.md
@@ -157,7 +185,7 @@ Phase 0:
 - [x] актуальные ETL-каталоги OWID загружены;
 - [x] подтверждён требуемый объём данных;
 - [x] реализовано объединение каталога и legacy с fallback;
-- [x] собран `data/processed/covid_merged.parquet` из 632 788 строк;
+- [x] собран `data/processed/covid_merged.parquet` из 624 273 строк;
 - [x] созданы sample-выборки для каталога и legacy;
 - [x] создан манифест данных с двумя источниками;
 - [x] зафиксирован контракт данных и модулей;
@@ -165,4 +193,12 @@ Phase 0:
 - [x] созданы SQL-схема и шаблоны запросов;
 - [x] подготовлены README и requirements.
 
-Следующий этап — Phase 1: реализация пайплайна, EDA, SQL-запросов, прогноза и дашборда.
+Sync-1: завершён (ветки участников сведены с main).
+
+Phase 1 (в процессе):
+
+- [x] пайплайн данных: merged parquet, SQLite, SQL-запросы, EDA и временные ряды;
+- [x] прогноз `global` и top-5 стран по `total_cases` с time-based split и горизонтом 30 дней;
+- [x] дашборд с фильтрами и вкладками Overview / Waves / Vaccination vs Mortality / Forecast / Data/SQL;
+- [x] README, requirements и документация по прогнозу обновлены;
+- [ ] финальная интеграция, отчёт и презентация.
